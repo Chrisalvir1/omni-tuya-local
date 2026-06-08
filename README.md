@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.4.0-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-0.4.1-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.6.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
@@ -376,6 +376,7 @@ Los campos son compatibles: `device_id`, `name`, `local_key`, `ip` → `host`, `
 
 | Versión | Cambios |
 |---|---|
+| **0.4.1** | **Hotfixes de Estabilidad para HA 2026.6.1**. Solucionado error de inicialización en la plataforma de iluminación (`light`) debido a la deprecación completa de mireds (`ATTR_COLOR_TEMP`) en HA, migrándola a Kelvin (`color_temp_kelvin`). Corregido error en sensores binarios (`binary_sensor`) debido a la asignación incorrecta del device class `CARBON_MONOXIDE` en lugar del oficial `CO`. |
 | **0.4.0** | **Edición HA 2026.6.1**. Soporte de sockets LAN persistentes, ejecución en paralelo para evitar latencia de Siri/HomeKit, autodescubrimiento UDP en segundo plano, soporte de cambio de nombre de dispositivo en UI (Options Flow) que actualiza todas sus entidades automáticamente, y asignación de unique_id basada en hardware para estabilidad con HomeKit Bridge. |
 | **0.2.2** | Conserva protocolo 3.4 cuando el probe LAN falla y mejora entidades de interruptores/luces por DPS |
 | **0.2.1** | El alta por dispositivo ya no se bloquea si la prueba LAN inmediata falla; la API importa metadata y la IP se guarda para que el coordinator controle localmente |
