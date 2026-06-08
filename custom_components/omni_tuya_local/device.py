@@ -65,9 +65,9 @@ class OmniTuyaDevice:
                 local_key=self.config.gateway_local_key or self.config.local_key,
                 version=float(self.config.version or 3.3),
             )
-            parent.set_socketPersistent(True)
-            parent.set_socketTimeout(2.5)
-            parent.set_socketRetryLimit(1)
+            parent.set_socketPersistent(False)
+            parent.set_socketTimeout(5.0)
+            parent.set_socketRetryLimit(3)
             device = tinytuya.Device(
                 dev_id=self.device_id,
                 cid=self.config.node_id,
@@ -80,9 +80,9 @@ class OmniTuyaDevice:
                 local_key=self.config.local_key,
                 version=float(self.config.version or 3.3),
             )
-            device.set_socketPersistent(True)
-            device.set_socketTimeout(2.5)
-            device.set_socketRetryLimit(1)
+            device.set_socketPersistent(False)
+            device.set_socketTimeout(5.0)
+            device.set_socketRetryLimit(3)
         return device
 
     def _get_or_build_tuya(self):
