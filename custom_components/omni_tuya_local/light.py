@@ -5,7 +5,7 @@ from typing import Any
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
-    ATTR_COLOR_TEMP,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_HS_COLOR,
     ColorMode,
     LightEntity,
@@ -135,27 +135,28 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
         return _parse_tuya_hsv(raw)
 
     @property
-    def color_temp(self) -> int | None:
-        """Temperatura de color en mireds."""
+    def color_temp_kelvin(self) -> int | None:
+        """Temperatura de color en Kelvin."""
         if not self._supports_color_temp:
             return None
         value = self.dps(DPS_COLOR_TEMP)
         if value is None:
             return None
         try:
-            # Convertir 0-1000 → mireds (153-500)
+            # Convertir 0-1000 a mireds (153-500) y luego a Kelvin
             normalized = int(value) / TUYA_COLOR_TEMP_MAX
-            return int(500 - normalized * (500 - 153))
-        except (TypeError, ValueError):
+            mireds = 500 - normalized * (500 - 153)
+            return int(1000000 / mireds)
+        except (TypeError, ValueError, ZeroDivisionError):
             return None
 
     @property
-    def min_mireds(self) -> int:
-        return 153
+    def min_color_temp_kelvin(self) -> int:
+        return 2000  # 1000000 / 500 mireds
 
     @property
-    def max_mireds(self) -> int:
-        return 500
+    def max_color_temp_kelvin(self) -> int:
+        return 6535  # 1000000 / 153 mireds
 
     # ── Comandos ──────────────────────────────────────────────────────────────
 
@@ -172,9 +173,11 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
             payload_dps[int(DPS_HSV)] = hsv_hex
             payload_dps[int(DPS_MODE)] = "colour"
 
-        elif ATTR_COLOR_TEMP in kwargs and self._supports_color_temp:
-            mireds = kwargs[ATTR_COLOR_TEMP]
-            # Convertir mireds → 0-1000
+        elif ATTR_COLOR_TEMP_KELVIN in kwargs and self._supports_color_temp:
+            kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+            # Convertir Kelvin a mireds (mireds = 1000000 / kelvin)
+            mireds = 1000000 / kelvin
+            # Convertir mireds (153-500) → 0-1000
             normalized = (500 - mireds) / (500 - 153)
             tuya_ct = int(max(0, min(TUYA_COLOR_TEMP_MAX, normalized * TUYA_COLOR_TEMP_MAX)))
             payload_dps[int(DPS_COLOR_TEMP)] = tuya_ct
