@@ -36,30 +36,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async def add_new_entities() -> None:
         entities = []
         for config in coordinator.store.all().values():
-            if config.get("domain") != "number":
-                continue
-
+            domain = config.get("domain")
             dps_map = config.get("dps_map") or {}
             device_type = config.get("device_type") or "generic"
 
-            if dps_map:
-                for dps_id, desc in dps_map.items():
-                    d = desc if isinstance(desc, dict) else {}
-                    uid = f"{DOMAIN}_{config['device_id']}_num_{dps_id}"
+            if domain == "number":
+                if dps_map:
+                    for dps_id, desc in dps_map.items():
+                        d = desc if isinstance(desc, dict) else {}
+                        uid = f"{DOMAIN}_{config['device_id']}_num_{dps_id}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(OmniTuyaNumber(coordinator, config, str(dps_id), d))
+                elif device_type in _DEVICE_NUMBER_PROFILES:
+                    for profile in _DEVICE_NUMBER_PROFILES[device_type]:
+                        uid = f"{DOMAIN}_{config['device_id']}_num_{profile['dps_id']}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(OmniTuyaNumber(coordinator, config, str(profile["dps_id"]), profile))
+                else:
+                    uid = f"{DOMAIN}_{config['device_id']}_num"
                     if uid not in _known_unique_ids:
                         _known_unique_ids.add(uid)
-                        entities.append(OmniTuyaNumber(coordinator, config, str(dps_id), d))
-            elif device_type in _DEVICE_NUMBER_PROFILES:
-                for profile in _DEVICE_NUMBER_PROFILES[device_type]:
-                    uid = f"{DOMAIN}_{config['device_id']}_num_{profile['dps_id']}"
-                    if uid not in _known_unique_ids:
-                        _known_unique_ids.add(uid)
-                        entities.append(OmniTuyaNumber(coordinator, config, str(profile["dps_id"]), profile))
+                        entities.append(OmniTuyaNumber(coordinator, config, "1", {}))
             else:
-                uid = f"{DOMAIN}_{config['device_id']}_num"
-                if uid not in _known_unique_ids:
-                    _known_unique_ids.add(uid)
-                    entities.append(OmniTuyaNumber(coordinator, config, "1", {}))
+                # Si no es el dominio principal, aun así agregamos los perfiles numéricos secundarios si existen
+                if device_type in _DEVICE_NUMBER_PROFILES:
+                    for profile in _DEVICE_NUMBER_PROFILES[device_type]:
+                        uid = f"{DOMAIN}_{config['device_id']}_num_{profile['dps_id']}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(OmniTuyaNumber(coordinator, config, str(profile["dps_id"]), profile))
 
         if entities:
             async_add_entities(entities)

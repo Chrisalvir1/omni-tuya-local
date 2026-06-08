@@ -42,39 +42,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async def add_new_entities() -> None:
         entities = []
         for config in coordinator.store.all().values():
-            if config.get("domain") != "button":
-                continue
-
+            domain = config.get("domain")
             device_type = config.get("device_type") or "generic"
             dps_map = config.get("dps_map") or {}
 
-            if dps_map:
-                # Crear un botón por cada DPS en el mapa
-                for dps_id, desc in dps_map.items():
-                    d = desc if isinstance(desc, dict) else {}
-                    uid = f"{DOMAIN}_{config['device_id']}_btn_{dps_id}"
-                    if uid not in _known_unique_ids:
-                        _known_unique_ids.add(uid)
-                        entities.append(OmniTuyaButton(coordinator, config, str(dps_id), d))
-            elif device_type in _DEVICE_BUTTONS:
-                # Crear botones predefinidos por device_type
-                for btn in _DEVICE_BUTTONS[device_type]:
-                    uid = f"{DOMAIN}_{config['device_id']}_btn_{btn['dps_id']}_{btn['name']}"
-                    if uid not in _known_unique_ids:
-                        _known_unique_ids.add(uid)
-                        entities.append(
-                            OmniTuyaButton(
-                                coordinator, config,
-                                str(btn["dps_id"]),
-                                {"name": btn["name"], "icon": btn.get("icon"), "value": btn.get("dps_value", True)},
+            if domain == "button":
+                if dps_map:
+                    # Crear un botón por cada DPS en el mapa
+                    for dps_id, desc in dps_map.items():
+                        d = desc if isinstance(desc, dict) else {}
+                        uid = f"{DOMAIN}_{config['device_id']}_btn_{dps_id}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(OmniTuyaButton(coordinator, config, str(dps_id), d))
+                elif device_type in _DEVICE_BUTTONS:
+                    # Crear botones predefinidos por device_type
+                    for btn in _DEVICE_BUTTONS[device_type]:
+                        uid = f"{DOMAIN}_{config['device_id']}_btn_{btn['dps_id']}_{btn['name']}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(
+                                OmniTuyaButton(
+                                    coordinator, config,
+                                    str(btn["dps_id"]),
+                                    {"name": btn["name"], "icon": btn.get("icon"), "value": btn.get("dps_value", True)},
+                                )
                             )
-                        )
+                else:
+                    # Botón genérico DPS 1
+                    uid = f"{DOMAIN}_{config['device_id']}_btn"
+                    if uid not in _known_unique_ids:
+                        _known_unique_ids.add(uid)
+                        entities.append(OmniTuyaButton(coordinator, config, "1", {}))
             else:
-                # Botón genérico DPS 1
-                uid = f"{DOMAIN}_{config['device_id']}_btn"
-                if uid not in _known_unique_ids:
-                    _known_unique_ids.add(uid)
-                    entities.append(OmniTuyaButton(coordinator, config, "1", {}))
+                # Si no es button, igual agregamos los botones secundarios predefinidos
+                if device_type in _DEVICE_BUTTONS:
+                    for btn in _DEVICE_BUTTONS[device_type]:
+                        uid = f"{DOMAIN}_{config['device_id']}_btn_{btn['dps_id']}_{btn['name']}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(
+                                OmniTuyaButton(
+                                    coordinator, config,
+                                    str(btn["dps_id"]),
+                                    {"name": btn["name"], "icon": btn.get("icon"), "value": btn.get("dps_value", True)},
+                                )
+                            )
 
         if entities:
             async_add_entities(entities)

@@ -74,16 +74,24 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
 
 
+_PREDEFINED_SWITCHES: dict[str, list[tuple[str, str | None]]] = {
+    "pet_feeder": [("3", "Alimentar ahora")],
+    "coffee_maker": [("1", "Preparar café")],
+    "kettle": [("1", "Hervir")],
+}
+
 def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tuple[str, str | None]]:
     """Determinar qué DPS exponer como canales de switch.
 
     Orden de prioridad:
     1. dps_map explícito del usuario
-    2. DPS booleanos detectados en el último poll
-    3. Fallback al canal 1
+    2. DPS predefinidos por device_type
+    3. DPS booleanos detectados en el último poll
+    4. Fallback al canal 1
     """
     dps_map = config.get("dps_map") or {}
     channels: list[tuple[str, str | None]] = []
+    device_type = config.get("device_type") or "generic"
 
     # 1. dps_map explícito
     for dps_id, desc in dps_map.items():
@@ -91,15 +99,21 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
             name = desc.get("name") if isinstance(desc, dict) else None
             channels.append((str(dps_id), name))
 
-    # 2. DPS booleanos del último poll (auto-detectar canales)
-    raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
-    for dps_id, value in raw_dps.items():
-        if isinstance(value, bool) and str(dps_id).isdigit():
-            existing = next((c for c in channels if c[0] == str(dps_id)), None)
-            if existing is None:
-                channels.append((str(dps_id), None))
+    # 2. DPS predefinidos
+    if not channels and device_type in _PREDEFINED_SWITCHES:
+        for dps_id, name in _PREDEFINED_SWITCHES[device_type]:
+            channels.append((str(dps_id), name))
 
-    # 3. Fallback
+    # 3. DPS booleanos del último poll (auto-detectar canales)
+    if not channels:
+        raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+        for dps_id, value in raw_dps.items():
+            if isinstance(value, bool) and str(dps_id).isdigit():
+                existing = next((c for c in channels if c[0] == str(dps_id)), None)
+                if existing is None:
+                    channels.append((str(dps_id), None))
+
+    # 4. Fallback
     if not channels:
         channels.append(("1", None))
 
