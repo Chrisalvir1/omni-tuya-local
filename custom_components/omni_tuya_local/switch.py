@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -42,6 +44,7 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
     ) -> None:
         super().__init__(coordinator, config, dps_id)
         self._channel_name = channel_name
+        self._is_feeding = False
         # HomeKit type hint automático según device_type
         device_type = config.get("device_type") or ""
         self._homekit_type = HOMEKIT_SWITCH_TYPES.get(device_type, "switch")
@@ -56,6 +59,8 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
+        if self.dps_id in ("3", "201"):
+            return self._is_feeding
         value = self.dps(self.dps_id)
         if value is None:
             return None
@@ -83,9 +88,20 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
                         portions = int(portions)
                     except ValueError:
                         portions = 1
-            await self.coordinator.async_set_value(self.device_id, int(self.dps_id), portions)
-            # Revertimos estado interno porque es un botón de una sola acción
+            
+            # Cambiamos estado local a encendido temporalmente
+            self._is_feeding = True
             self.async_write_ha_state()
+
+            try:
+                await self.coordinator.async_set_value(self.device_id, int(self.dps_id), portions)
+            finally:
+                # Esperamos 2 segundos y volvemos a apagar para que en HomeKit se vea como pulsador
+                async def auto_reset():
+                    await asyncio.sleep(2.0)
+                    self._is_feeding = False
+                    self.async_write_ha_state()
+                self.hass.async_create_task(auto_reset())
         else:
             await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
 
