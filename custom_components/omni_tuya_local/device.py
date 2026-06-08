@@ -88,9 +88,9 @@ class OmniTuyaDevice:
                 local_key=self.config.local_key,
                 version=float(self.config.version or 3.3),
             )
-            device.set_socketPersistent(True)
+            device.set_socketPersistent(False)
             device.set_socketTimeout(3.0)
-            device.set_socketRetryLimit(2)
+            device.set_socketRetryLimit(1)
         return device
 
     def _get_or_build_tuya(self):
