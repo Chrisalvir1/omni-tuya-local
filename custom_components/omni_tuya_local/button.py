@@ -16,7 +16,7 @@ from .entity import OmniTuyaEntity
 # pero con botones bien nombrados la experiencia en HA y HomeKit es óptima.
 _DEVICE_BUTTONS: dict[str, list[dict[str, Any]]] = {
     "pet_feeder": [
-        {"dps_id": "5",  "name": "Limpiar tolva",      "dps_value": True, "icon": "mdi:broom"},
+        {"dps_id": "5", "alt_dps_ids": ["105"], "name": "Limpiar tolva", "dps_value": True, "icon": "mdi:broom"},
     ],
     "ir_remote": [
         {"dps_id": "1", "name": "Encender/Apagar", "dps_value": "power", "icon": "mdi:power"},
@@ -57,13 +57,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 elif device_type in _DEVICE_BUTTONS:
                     # Crear botones predefinidos por device_type
                     for btn in _DEVICE_BUTTONS[device_type]:
-                        uid = f"{DOMAIN}_{config['device_id']}_btn_{btn['dps_id']}_{btn['name']}"
+                        dps_id = btn["dps_id"]
+                        raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+                        found_id = None
+                        if str(dps_id) in raw_dps:
+                            found_id = dps_id
+                        else:
+                            for alt in btn.get("alt_dps_ids", []):
+                                if str(alt) in raw_dps:
+                                    found_id = alt
+                                    break
+                        if found_id is None:
+                            found_id = dps_id
+
+                        uid = f"{DOMAIN}_{config['device_id']}_btn_{found_id}_{btn['name']}"
                         if uid not in _known_unique_ids:
                             _known_unique_ids.add(uid)
                             entities.append(
                                 OmniTuyaButton(
                                     coordinator, config,
-                                    str(btn["dps_id"]),
+                                    str(found_id),
                                     {"name": btn["name"], "icon": btn.get("icon"), "value": btn.get("dps_value", True)},
                                 )
                             )
@@ -77,13 +90,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 # Si no es button, igual agregamos los botones secundarios predefinidos
                 if device_type in _DEVICE_BUTTONS:
                     for btn in _DEVICE_BUTTONS[device_type]:
-                        uid = f"{DOMAIN}_{config['device_id']}_btn_{btn['dps_id']}_{btn['name']}"
+                        dps_id = btn["dps_id"]
+                        raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+                        found_id = None
+                        if str(dps_id) in raw_dps:
+                            found_id = dps_id
+                        else:
+                            for alt in btn.get("alt_dps_ids", []):
+                                if str(alt) in raw_dps:
+                                    found_id = alt
+                                    break
+                        if found_id is None:
+                            found_id = dps_id
+
+                        uid = f"{DOMAIN}_{config['device_id']}_btn_{found_id}_{btn['name']}"
                         if uid not in _known_unique_ids:
                             _known_unique_ids.add(uid)
                             entities.append(
                                 OmniTuyaButton(
                                     coordinator, config,
-                                    str(btn["dps_id"]),
+                                    str(found_id),
                                     {"name": btn["name"], "icon": btn.get("icon"), "value": btn.get("dps_value", True)},
                                 )
                             )

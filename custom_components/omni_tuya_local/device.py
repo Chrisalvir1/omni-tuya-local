@@ -107,9 +107,14 @@ class OmniTuyaDevice:
         """Llamada síncrona a tinytuya.status(). Retorna dps o None."""
         device = self._get_or_build_tuya()
         raw = device.status()
-        if raw and isinstance(raw, dict) and "dps" in raw:
-            return dict(raw["dps"])
+        if raw and isinstance(raw, dict):
+            if "dps" in raw:
+                return dict(raw["dps"])
+            _LOGGER.warning("Tuya device %s status returned no dps. Raw response: %s", self.device_id, raw)
+        else:
+            _LOGGER.warning("Tuya device %s status returned empty or non-dict response: %s", self.device_id, raw)
         return None
+
 
     def _sync_set_status(self, value: bool, dps_id: int) -> None:
         device = self._get_or_build_tuya()
@@ -269,17 +274,22 @@ class OmniTuyaDevice:
         """Obtener todos los DPS en tiempo real (para diagnóstico)."""
         async with self._lock:
             if not self.config.has_host:
-                return {}
+                return {"error": "no_host"}
             try:
-                dps = await asyncio.wait_for(
-                    self.hass.async_add_executor_job(self._sync_status),
+                def _get_raw():
+                    dev = self._get_or_build_tuya()
+                    return dev.status()
+                raw = await asyncio.wait_for(
+                    self.hass.async_add_executor_job(_get_raw),
                     timeout=_TUYA_TIMEOUT,
                 )
-                return dps or {}
+                if raw and isinstance(raw, dict):
+                    return raw
+                return {"error": "invalid_response", "raw": raw}
             except Exception as err:
                 _LOGGER.debug("fetch_raw_dps error for %s: %s", self.device_id, err)
                 self._invalidate_client()
-                return {}
+                return {"error": str(err)}
 
     def close(self) -> None:
         """Cerrar la conexión socket persistentemente abierta."""

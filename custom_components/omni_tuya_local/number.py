@@ -11,8 +11,8 @@ from .entity import OmniTuyaEntity
 # ── Perfiles predefinidos por device_type (min, max, step, unit) ──────────────
 _DEVICE_NUMBER_PROFILES: dict[str, list[dict]] = {
     "pet_feeder": [
-        {"dps_id": "4",  "name": "Porciones por comida", "min": 1, "max": 20, "step": 1, "unit": ""},
-        {"dps_id": "6",  "name": "Número de comidas/día", "min": 1, "max": 6,  "step": 1, "unit": ""},
+        {"dps_id": "4",  "alt_dps_ids": ["202"], "name": "Porciones por comida", "min": 1, "max": 20, "step": 1, "unit": ""},
+        {"dps_id": "6",  "alt_dps_ids": ["206"], "name": "Número de comidas/día", "min": 1, "max": 6,  "step": 1, "unit": ""},
     ],
     "air_purifier": [
         {"dps_id": "15", "name": "Temporizar apagado",   "min": 0, "max": 480, "step": 30, "unit": "min"},
@@ -50,10 +50,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                             entities.append(OmniTuyaNumber(coordinator, config, str(dps_id), d))
                 elif device_type in _DEVICE_NUMBER_PROFILES:
                     for profile in _DEVICE_NUMBER_PROFILES[device_type]:
-                        uid = f"{DOMAIN}_{config['device_id']}_num_{profile['dps_id']}"
+                        dps_id = profile["dps_id"]
+                        raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+                        found_id = None
+                        if str(dps_id) in raw_dps:
+                            found_id = dps_id
+                        else:
+                            for alt in profile.get("alt_dps_ids", []):
+                                if str(alt) in raw_dps:
+                                    found_id = alt
+                                    break
+                        if found_id is None:
+                            found_id = dps_id
+
+                        uid = f"{DOMAIN}_{config['device_id']}_num_{found_id}"
                         if uid not in _known_unique_ids:
                             _known_unique_ids.add(uid)
-                            entities.append(OmniTuyaNumber(coordinator, config, str(profile["dps_id"]), profile))
+                            p = dict(profile)
+                            p["dps_id"] = str(found_id)
+                            entities.append(OmniTuyaNumber(coordinator, config, str(found_id), p))
                 else:
                     uid = f"{DOMAIN}_{config['device_id']}_num"
                     if uid not in _known_unique_ids:
@@ -63,10 +78,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 # Si no es el dominio principal, aun así agregamos los perfiles numéricos secundarios si existen
                 if device_type in _DEVICE_NUMBER_PROFILES:
                     for profile in _DEVICE_NUMBER_PROFILES[device_type]:
-                        uid = f"{DOMAIN}_{config['device_id']}_num_{profile['dps_id']}"
+                        dps_id = profile["dps_id"]
+                        raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+                        found_id = None
+                        if str(dps_id) in raw_dps:
+                            found_id = dps_id
+                        else:
+                            for alt in profile.get("alt_dps_ids", []):
+                                if str(alt) in raw_dps:
+                                    found_id = alt
+                                    break
+                        if found_id is None:
+                            found_id = dps_id
+
+                        uid = f"{DOMAIN}_{config['device_id']}_num_{found_id}"
                         if uid not in _known_unique_ids:
                             _known_unique_ids.add(uid)
-                            entities.append(OmniTuyaNumber(coordinator, config, str(profile["dps_id"]), profile))
+                            p = dict(profile)
+                            p["dps_id"] = str(found_id)
+                            entities.append(OmniTuyaNumber(coordinator, config, str(found_id), p))
 
         if entities:
             async_add_entities(entities)

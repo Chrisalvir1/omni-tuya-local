@@ -289,18 +289,20 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return {"success": False, "error": "device_not_found"}
             device = OmniTuyaDevice(self.hass, config)
 
-        dps = await device.async_fetch_raw_dps()
-        if dps is not None and isinstance(dps, dict):
+        res = await device.async_fetch_raw_dps()
+        if isinstance(res, dict) and "dps" in res:
             return {
                 "success": True,
                 "device_id": device_id,
                 "host": device.config.host,
                 "version": device.config.version,
-                "dps": dps,
+                "dps": res["dps"],
             }
         return {
             "success": False,
             "device_id": device_id,
             "host": device.config.host,
-            "error": "no_response",
+            "version": device.config.version,
+            "error": res.get("error") if isinstance(res, dict) else "no_response",
+            "raw": res,
         }

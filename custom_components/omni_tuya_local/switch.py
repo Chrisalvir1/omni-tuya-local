@@ -68,23 +68,38 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         return attrs
 
     async def async_turn_on(self, **kwargs) -> None:
-        if self._homekit_type == "switch" and self.dps_id == "3":
+        if self._homekit_type == "switch" and self.dps_id in ("3", "201"):
             # Comederos de mascotas suelen requerir un INT (número de porciones) en lugar de True
-            await self.coordinator.async_set_value(self.device_id, int(self.dps_id), 1)
+            portions_dps = "202" if self.dps_id == "201" else "4"
+            portions = self.dps(portions_dps)
+            if portions is None:
+                portions = 1
+            else:
+                try:
+                    portions = int(portions)
+                except ValueError:
+                    portions = 1
+            await self.coordinator.async_set_value(self.device_id, int(self.dps_id), portions)
             # Revertimos estado interno porque es un botón de una sola acción
             self.async_write_ha_state()
         else:
             await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
 
     async def async_turn_off(self, **kwargs) -> None:
-        if not (self._homekit_type == "switch" and self.dps_id == "3"):
+        if not (self._homekit_type == "switch" and self.dps_id in ("3", "201")):
             await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
 
 
-_PREDEFINED_SWITCHES: dict[str, list[tuple[str, str | None]]] = {
-    "pet_feeder": [("3", "Alimentar ahora")],
-    "coffee_maker": [("1", "Preparar café")],
-    "kettle": [("1", "Hervir")],
+_PREDEFINED_SWITCHES: dict[str, list[dict[str, Any]]] = {
+    "pet_feeder": [
+        {"dps_id": "3", "alt_dps_ids": ["201"], "name": "Alimentar ahora"},
+    ],
+    "coffee_maker": [
+        {"dps_id": "1", "name": "Preparar café"},
+    ],
+    "kettle": [
+        {"dps_id": "1", "name": "Hervir"},
+    ],
 }
 
 def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tuple[str, str | None]]:
@@ -108,8 +123,21 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
 
     # 2. DPS predefinidos
     if not channels and device_type in _PREDEFINED_SWITCHES:
-        for dps_id, name in _PREDEFINED_SWITCHES[device_type]:
-            channels.append((str(dps_id), name))
+        for item in _PREDEFINED_SWITCHES[device_type]:
+            dps_id = item["dps_id"]
+            name = item.get("name")
+            raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+            found_id = None
+            if str(dps_id) in raw_dps:
+                found_id = dps_id
+            else:
+                for alt in item.get("alt_dps_ids", []):
+                    if str(alt) in raw_dps:
+                        found_id = alt
+                        break
+            if found_id is None:
+                found_id = dps_id
+            channels.append((str(found_id), name))
 
     # 3. DPS booleanos del último poll (auto-detectar canales)
     if not channels:
