@@ -1,0 +1,296 @@
+add_device:
+  name: Agregar dispositivo
+  description: Agrega o actualiza un dispositivo Tuya local con todos sus parámetros.
+  fields:
+    device_id:
+      name: ID del dispositivo
+      description: ID único del dispositivo Tuya (gwId).
+      required: true
+      selector:
+        text:
+    name:
+      name: Nombre
+      description: Nombre para identificar el dispositivo en Home Assistant.
+      required: true
+      selector:
+        text:
+    local_key:
+      name: Local key
+      description: Clave de cifrado local del dispositivo.
+      required: true
+      selector:
+        text:
+          type: password
+    host:
+      name: Dirección IP local
+      description: IP local del dispositivo (puede configurarse después).
+      required: false
+      selector:
+        text:
+    version:
+      name: Versión de protocolo
+      description: Versión del protocolo Tuya LAN.
+      default: "3.3"
+      selector:
+        select:
+          options:
+            - "3.1"
+            - "3.3"
+            - "3.4"
+            - "3.5"
+    domain:
+      name: Tipo de entidad
+      description: Cómo se exporta el dispositivo en Home Assistant.
+      default: switch
+      selector:
+        select:
+          options:
+            - switch
+            - light
+            - fan
+            - lock
+            - cover
+            - climate
+            - sensor
+            - binary_sensor
+            - button
+            - number
+            - text
+            - vacuum
+            - alarm_control_panel
+            - humidifier
+    device_type:
+      name: Tipo real del dispositivo
+      description: Tipo físico del dispositivo (para icono y etiqueta).
+      default: generic
+      selector:
+        select:
+          options:
+            - generic
+            - kitchen
+            - coffee_maker
+            - kettle
+            - rice_cooker
+            - air_fryer
+            - microwave
+            - oven
+            - refrigerator
+            - washer
+            - dryer
+            - dishwasher
+            - fan
+            - air_conditioner
+            - heater
+            - humidifier
+            - dehumidifier
+            - air_purifier
+            - robot_vacuum
+            - vacuum
+            - alarm_kit
+            - siren
+            - motion_sensor
+            - door_sensor
+            - smoke_sensor
+            - water_leak_sensor
+            - temperature_sensor
+            - humidity_sensor
+            - presence_sensor
+            - lock
+            - garage_door
+            - curtain
+            - blind
+            - light
+            - dimmer
+            - led_strip
+            - outlet
+            - power_strip
+            - switch
+            - ir_remote
+            - pet_feeder
+            - water_fountain
+            - sprinkler
+            - valve
+            - pump
+
+remove_device:
+  name: Eliminar dispositivo
+  description: Elimina un dispositivo Tuya local del registro.
+  fields:
+    device_id:
+      name: ID del dispositivo
+      required: true
+      selector:
+        text:
+
+set_device_ip:
+  name: Actualizar IP del dispositivo
+  description: Establece o actualiza la dirección IP local de un dispositivo.
+  fields:
+    device_id:
+      name: ID del dispositivo
+      required: true
+      selector:
+        text:
+    host:
+      name: Nueva IP local
+      description: Nueva dirección IP del dispositivo (formato 192.168.x.x).
+      required: true
+      selector:
+        text:
+
+set_device_domain:
+  name: Cambiar tipo de entidad
+  description: Cambia cómo se expone el dispositivo en Home Assistant.
+  fields:
+    device_id:
+      name: ID del dispositivo
+      required: true
+      selector:
+        text:
+    domain:
+      name: Nuevo tipo de entidad
+      required: true
+      selector:
+        select:
+          options:
+            - switch
+            - light
+            - fan
+            - lock
+            - cover
+            - climate
+            - sensor
+            - binary_sensor
+            - button
+            - number
+            - text
+            - vacuum
+            - alarm_control_panel
+            - humidifier
+
+set_device_type:
+  name: Cambiar tipo de dispositivo
+  description: Cambia el tipo físico del dispositivo (para icono y etiqueta).
+  fields:
+    device_id:
+      name: ID del dispositivo
+      required: true
+      selector:
+        text:
+    device_type:
+      name: Tipo real
+      required: true
+      selector:
+        select:
+          options:
+            - generic
+            - kitchen
+            - coffee_maker
+            - kettle
+            - rice_cooker
+            - air_fryer
+            - microwave
+            - oven
+            - refrigerator
+            - washer
+            - dryer
+            - dishwasher
+            - fan
+            - air_conditioner
+            - heater
+            - humidifier
+            - dehumidifier
+            - air_purifier
+            - robot_vacuum
+            - vacuum
+            - alarm_kit
+            - siren
+            - motion_sensor
+            - door_sensor
+            - smoke_sensor
+            - water_leak_sensor
+            - temperature_sensor
+            - humidity_sensor
+            - presence_sensor
+            - lock
+            - garage_door
+            - curtain
+            - blind
+            - light
+            - dimmer
+            - led_strip
+            - outlet
+            - power_strip
+            - switch
+            - ir_remote
+            - pet_feeder
+            - water_fountain
+            - sprinkler
+            - valve
+            - pump
+
+scan_network:
+  name: Escanear red
+  description: Descubre dispositivos Tuya en la red local y actualiza las IPs conocidas.
+
+sync_cloud:
+  name: Sincronizar con Tuya Cloud
+  description: Importa device IDs y local keys desde Tuya IoT Cloud. Las credenciales son opcionales si ya están guardadas.
+  fields:
+    api_key:
+      name: Access ID
+      required: false
+      selector:
+        text:
+    api_secret:
+      name: Access Secret
+      required: false
+      selector:
+        text:
+          type: password
+    region:
+      name: Región
+      default: us
+      selector:
+        select:
+          options:
+            - us
+            - eu
+            - cn
+            - in
+    device_id:
+      name: ID específico (opcional)
+      description: Si se especifica, solo sincroniza ese dispositivo.
+      required: false
+      selector:
+        text:
+
+reload_devices:
+  name: Recargar dispositivos
+  description: Recarga los dispositivos almacenados y refresca las entidades en Home Assistant.
+
+diagnostics:
+  name: Diagnósticos
+  description: Retorna información detallada sobre la integración y todos los dispositivos registrados.
+
+test_device:
+  name: Probar dispositivo
+  description: Prueba la conectividad LAN de un dispositivo específico y retorna los DPS en tiempo real.
+  fields:
+    device_id:
+      name: ID del dispositivo
+      description: ID del dispositivo a probar.
+      required: true
+      selector:
+        text:
+
+fetch_dps:
+  name: Obtener DPS
+  description: Obtiene todos los DPS (Data Points) de un dispositivo en tiempo real para diagnóstico.
+  fields:
+    device_id:
+      name: ID del dispositivo
+      description: ID del dispositivo del que obtener los DPS.
+      required: true
+      selector:
+        text:

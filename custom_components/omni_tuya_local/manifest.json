@@ -1,0 +1,13 @@
+{
+  "domain": "omni_tuya_local",
+  "name": "Omni Tuya Local",
+  "codeowners": ["@Chrisalvir1"],
+  "config_flow": true,
+  "documentation": "https://github.com/Chrisalvir1/omni-tuya-local",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "requirements": ["tinytuya>=1.15.1"],
+  "version": "0.4.0",
+  "after_dependencies": ["network"],
+  "quality_scale": "silver"
+}

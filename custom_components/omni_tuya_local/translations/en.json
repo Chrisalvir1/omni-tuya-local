@@ -1,0 +1,92 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Omni Tuya Local",
+        "description": "Add Tuya devices using local LAN. Cloud is only used to retrieve local keys.",
+        "data": {
+          "setup_mode": "Setup method"
+        }
+      },
+      "cloud_credentials": {
+        "title": "Tuya IoT Credentials",
+        "description": "Enter your Tuya IoT Platform Access ID, Access Secret, and region. Only used to list devices and fetch local keys.",
+        "data": {
+          "region": "Region",
+          "api_key": "Access ID (API Key)",
+          "api_secret": "Access Secret"
+        }
+      },
+      "choose_cloud_device": {
+        "title": "Choose device",
+        "description": "Select the device you want to add to Home Assistant.",
+        "data": {
+          "device_id": "Device"
+        }
+      },
+      "search_device": {
+        "title": "Search local IP",
+        "description": "Omni will try to find **{device_name}** (`{device_id}`) on your local network. Press Submit to start the search (may take ~10 seconds).",
+        "data": {}
+      },
+      "local_device": {
+        "title": "Local configuration",
+        "description": "{hint}",
+        "data": {
+          "device_id": "Device ID",
+          "host": "Local IP address",
+          "local_key": "Local key",
+          "version": "Protocol version",
+          "domain": "Entity type in Home Assistant",
+          "device_type": "Physical device type"
+        }
+      },
+      "device_details": {
+        "title": "Device name",
+        "description": "This name will appear in Home Assistant to identify the device.",
+        "data": {
+          "name": "Name"
+        }
+      }
+    },
+    "error": {
+      "cloud_error": "Could not connect to Tuya Cloud. Check your credentials, region, and IoT project permissions.",
+      "no_devices": "No devices with local key were found.",
+      "invalid_ip": "Invalid IP address format. Use format 192.168.x.x",
+      "connection": "Could not connect locally, but the device was saved. Configure the IP later from Options."
+    },
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "unique_id_mismatch": "Device ID does not match."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Omni Tuya — Configure device",
+        "description": "Select the device you want to edit. You have **{count}** registered devices.",
+        "data": {
+          "device_id": "Device"
+        }
+      },
+      "edit_device": {
+        "title": "Edit {device_name}",
+        "description": "Configure the local IP, protocol, entity type, and physical type.\n\n**ID:** `{device_id}`\n**Current IP:** `{current_ip}`\n**Protocol:** `{current_version}`\n**Current entity:** `{current_domain}`\n**Current type:** `{current_device_type}`\n**Local key:** `{local_key_masked}`\n\nLeave local key empty to keep the current one.",
+        "data": {
+          "name": "Device name",
+          "host": "Local IP address",
+          "local_key": "Local key (empty = keep current)",
+          "version": "Protocol version",
+          "domain": "Export as entity",
+          "device_type": "Physical device type"
+        }
+      }
+    },
+    "error": {
+      "invalid_ip": "Invalid IP address format (example: 192.168.1.100)."
+    },
+    "abort": {
+      "no_devices": "No registered devices. Add one first from the integration setup or sync with Tuya Cloud."
+    }
+  }
+}

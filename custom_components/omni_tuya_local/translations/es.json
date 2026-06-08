@@ -1,0 +1,92 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Omni Tuya Local",
+        "description": "Agrega dispositivos Tuya de forma 100% local. La nube solo se usa para obtener la local key; el control es por red LAN.",
+        "data": {
+          "setup_mode": "Método de configuración"
+        }
+      },
+      "cloud_credentials": {
+        "title": "Credenciales Tuya IoT",
+        "description": "Ingresa tu Access ID, Access Secret y región de Tuya IoT Platform. Solo se usan para listar dispositivos y obtener local keys.",
+        "data": {
+          "region": "Región",
+          "api_key": "Access ID (API Key)",
+          "api_secret": "Access Secret (API Secret)"
+        }
+      },
+      "choose_cloud_device": {
+        "title": "Seleccionar dispositivo",
+        "description": "Elige el dispositivo que deseas agregar a Home Assistant.",
+        "data": {
+          "device_id": "Dispositivo"
+        }
+      },
+      "search_device": {
+        "title": "Buscar IP local",
+        "description": "Omni buscará la IP local de **{device_name}** (`{device_id}`) en tu red. Presiona Enviar para iniciar la búsqueda (puede tardar ~10 segundos).",
+        "data": {}
+      },
+      "local_device": {
+        "title": "Configuración local",
+        "description": "{hint}",
+        "data": {
+          "device_id": "ID del dispositivo",
+          "host": "Dirección IP local",
+          "local_key": "Local key",
+          "version": "Versión del protocolo",
+          "domain": "Tipo de entidad en Home Assistant",
+          "device_type": "Tipo real del dispositivo"
+        }
+      },
+      "device_details": {
+        "title": "Nombre del dispositivo",
+        "description": "Este nombre aparecerá en Home Assistant para identificar el dispositivo.",
+        "data": {
+          "name": "Nombre"
+        }
+      }
+    },
+    "error": {
+      "cloud_error": "No se pudo conectar con Tuya Cloud. Verifica las credenciales, la región y los permisos del proyecto IoT.",
+      "no_devices": "No se encontraron dispositivos con local key disponible.",
+      "invalid_ip": "La dirección IP no tiene formato válido. Usa el formato 192.168.x.x",
+      "connection": "No se pudo conectar localmente, pero el dispositivo se guardó. Configura la IP después desde Opciones."
+    },
+    "abort": {
+      "already_configured": "Este dispositivo ya está configurado.",
+      "unique_id_mismatch": "El ID del dispositivo no coincide."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Omni Tuya — Configurar dispositivo",
+        "description": "Selecciona el dispositivo que deseas editar. Tienes **{count}** dispositivos registrados.",
+        "data": {
+          "device_id": "Dispositivo"
+        }
+      },
+      "edit_device": {
+        "title": "Editar {device_name}",
+        "description": "Configura la IP local, protocolo, entidad y tipo del dispositivo.\n\n**ID:** `{device_id}`\n**IP actual:** `{current_ip}`\n**Protocolo:** `{current_version}`\n**Entidad actual:** `{current_domain}`\n**Tipo actual:** `{current_device_type}`\n**Local key:** `{local_key_masked}`\n\nDeja el campo de local key vacío para conservar la actual.",
+        "data": {
+          "name": "Nombre del dispositivo",
+          "host": "Dirección IP local",
+          "local_key": "Local key (vacío = mantener actual)",
+          "version": "Versión del protocolo",
+          "domain": "Exportar como entidad",
+          "device_type": "Tipo real del dispositivo"
+        }
+      }
+    },
+    "error": {
+      "invalid_ip": "La dirección IP no tiene formato válido (ejemplo: 192.168.1.100)."
+    },
+    "abort": {
+      "no_devices": "No hay dispositivos registrados. Agrega uno primero desde la configuración o sincroniza con Tuya Cloud."
+    }
+  }
+}
