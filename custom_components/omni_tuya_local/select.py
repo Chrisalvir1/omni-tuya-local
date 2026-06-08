@@ -30,6 +30,15 @@ _DEVICE_TYPE_OPTIONS: dict[str, list[str]] = {
     "ir_remote": ["power", "mute", "vol+", "vol-", "ch+", "ch-"],
 }
 
+_PREDEFINED_SELECTS: dict[str, list[dict[str, Any]]] = {
+    "alarm_kit": [
+        {"dps_id": "115", "name": "Sonido Zona 1", "options": ["clock", "bark", "bell", "dingdong", "alarm", "doorbell", "beep", "silent"]},
+        {"dps_id": "116", "name": "Sonido Zona 2", "options": ["clock", "bark", "bell", "dingdong", "alarm", "doorbell", "beep", "silent"]},
+        {"dps_id": "117", "name": "Sonido Zona 3", "options": ["clock", "bark", "bell", "dingdong", "alarm", "doorbell", "beep", "silent"]},
+        {"dps_id": "118", "name": "Sonido Zona 4", "options": ["clock", "bark", "bell", "dingdong", "alarm", "doorbell", "beep", "silent"]},
+    ]
+}
+
 # Mapeo de DPS 'mode' típicos de Tuya según category
 _CATEGORY_OPTIONS: dict[str, list[str]] = {
     "kj": ["auto", "sleep", "low", "medium", "high"],  # air purifier
@@ -48,7 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async def add_new_entities() -> None:
         entities = []
         for config in coordinator.store.all().values():
-            if config.get("domain") != "select":
+            device_domain = config.get("domain")
+            device_type = config.get("device_type") or "generic"
+            if device_domain != "select" and device_type not in _PREDEFINED_SELECTS:
                 continue
 
             # Determinar DPS de modo y opciones disponibles
@@ -60,6 +71,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     if uid not in _known_unique_ids:
                         _known_unique_ids.add(uid)
                         entities.append(OmniTuyaSelect(coordinator, config, str(dps_id), desc))
+            elif device_type in _PREDEFINED_SELECTS:
+                for item in _PREDEFINED_SELECTS[device_type]:
+                    dps_id = item["dps_id"]
+                    uid = f"{DOMAIN}_{config['device_id']}_select_{dps_id}"
+                    if uid not in _known_unique_ids:
+                        _known_unique_ids.add(uid)
+                        entities.append(OmniTuyaSelect(coordinator, config, str(dps_id), item))
             else:
                 # Select de modo genérico (DPS 2)
                 uid = f"{DOMAIN}_{config['device_id']}_select"
@@ -93,11 +111,11 @@ class OmniTuyaSelect(OmniTuyaEntity, SelectEntity):
         # Determinar opciones disponibles (desc > device_type > category > fallback genérico)
         explicit_options = self._desc.get("options")
         if explicit_options and isinstance(explicit_options, list):
-            self._attr_options = [str(o) for o in explicit_options]
+            self._base_options = [str(o) for o in explicit_options]
         else:
             device_type = config.get("device_type") or ""
             category = (config.get("category") or "").lower()
-            self._attr_options = (
+            self._base_options = (
                 _DEVICE_TYPE_OPTIONS.get(device_type)
                 or _CATEGORY_OPTIONS.get(category)
                 or ["auto", "manual", "off"]
@@ -108,6 +126,14 @@ class OmniTuyaSelect(OmniTuyaEntity, SelectEntity):
         if self._desc.get("name"):
             return self._desc["name"]
         return "Modo"
+
+    @property
+    def options(self) -> list[str]:
+        opts = list(self._base_options)
+        curr = self.current_option
+        if curr and curr not in opts:
+            opts.append(curr)
+        return opts
 
     @property
     def current_option(self) -> str | None:

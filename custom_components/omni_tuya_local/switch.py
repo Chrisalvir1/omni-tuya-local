@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+from typing import Any
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -18,7 +20,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async def add_new_entities() -> None:
         entities = []
         for config in coordinator.store.all().values():
-            if config.get("domain") != "switch":
+            device_domain = config.get("domain")
+            device_type = config.get("device_type") or "generic"
+            if device_domain != "switch" and device_type not in _PREDEFINED_SWITCHES:
                 continue
             for dps_id, name in _switch_dps(config, coordinator):
                 unique_suffix = "" if dps_id == "1" else f"_{dps_id}"
@@ -119,6 +123,12 @@ _PREDEFINED_SWITCHES: dict[str, list[dict[str, Any]]] = {
     ],
     "kettle": [
         {"dps_id": "1", "name": "Hervir"},
+    ],
+    "alarm_kit": [
+        {"dps_id": "109", "name": "Zona 1"},
+        {"dps_id": "110", "name": "Zona 2"},
+        {"dps_id": "111", "name": "Zona 3"},
+        {"dps_id": "112", "name": "Zona 4"},
     ],
 }
 
