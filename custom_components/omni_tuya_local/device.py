@@ -13,7 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 # Tiempo máximo de espera para cualquier operación LAN
 _TUYA_TIMEOUT = 5
 # Reintentos antes de marcar unavailable
-_MAX_STATUS_RETRIES = 2
+_MAX_STATUS_RETRIES = 3
 
 
 class OmniTuyaDevice:
@@ -142,9 +142,7 @@ class OmniTuyaDevice:
                         self._available = True
                         self._consecutive_failures = 0
                         return self.dps
-                    # Respuesta vacía — no es error fatal, puede ser dispositivo ocupado
-                    self._available = False
-                    return self.dps
+                    raise ConnectionError("Empty or invalid status response from Tuya device")
                 except asyncio.TimeoutError as err:
                     last_err = err
                     _LOGGER.debug(
