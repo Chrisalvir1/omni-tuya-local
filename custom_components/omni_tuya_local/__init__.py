@@ -245,13 +245,14 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         return {"found": len(found), "added": added, "devices": found}
 
     async def sync_cloud(call: ServiceCall) -> dict[str, Any]:
-        coord = _coordinator(hass, entry_id)
-        cloud_config = dict(coord.store.cloud_config)
+        store = TuyaDeviceStore(hass)
+        await store.async_load()
+        cloud_config = dict(store.cloud_config)
         cloud_config.update({k: v for k, v in call.data.items() if v})
         if not cloud_config.get(CONF_API_KEY) or not cloud_config.get(CONF_API_SECRET):
             raise ValueError("Tuya API key and API secret are required")
-        coord.store.cloud_config.update(cloud_config)
-        await coord.store.async_save()
+        store.cloud_config.update(cloud_config)
+        await store.async_save()
         devices = await async_fetch_cloud_devices(
             hass,
             cloud_config[CONF_API_KEY],
@@ -259,7 +260,24 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
             cloud_config.get(CONF_REGION, DEFAULT_REGION),
             cloud_config.get(CONF_DEVICE_ID, ""),
         )
-        imported = await coord.async_add_devices(devices)
+        imported = await store.add_many(devices)
+
+        # Crear entrada para cada dispositivo nuevo
+        existing_entries = [e.data.get(CONF_DEVICE_ID) for e in hass.config_entries.async_entries(DOMAIN)]
+        for dev in imported:
+            if dev["device_id"] not in existing_entries:
+                hass.async_create_task(
+                    hass.config_entries.flow.async_init(
+                        DOMAIN,
+                        context={"source": "import"},
+                        data=dev,
+                    )
+                )
+
+        # Recargar todos los coordinadores
+        for coord in hass.data[DOMAIN].values():
+            await coord.async_reload_devices()
+
         return {"imported": len(imported), "devices": imported}
 
     async def reload_devices(call: ServiceCall) -> None:

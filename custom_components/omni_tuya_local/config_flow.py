@@ -64,6 +64,31 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             mode = user_input["setup_mode"]
             if mode == "cloud_device":
+                from .storage import TuyaDeviceStore
+                store = TuyaDeviceStore(self.hass)
+                await store.async_load()
+                
+                # Si ya tenemos credenciales, saltar paso
+                if store.cloud_config.get(CONF_API_KEY) and store.cloud_config.get(CONF_API_SECRET):
+                    try:
+                        devices = await async_fetch_cloud_devices(
+                            self.hass,
+                            store.cloud_config[CONF_API_KEY],
+                            store.cloud_config[CONF_API_SECRET],
+                            store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
+                            "",
+                        )
+                        self._cloud_devices = [d for d in devices if d.get(CONF_LOCAL_KEY)]
+                        if self._cloud_devices:
+                            self._device_data = {
+                                CONF_REGION: store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
+                                CONF_API_KEY: store.cloud_config[CONF_API_KEY],
+                                CONF_API_SECRET: store.cloud_config[CONF_API_SECRET],
+                            }
+                            return await self.async_step_choose_cloud_device()
+                    except Exception:
+                        pass # Fallback a pedir credenciales
+
                 return await self.async_step_cloud_credentials()
             if mode == "manual_device":
                 return await self.async_step_local_device()
@@ -86,8 +111,21 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=vol.Schema(fields))
 
+    async def async_step_import(self, user_input: dict[str, Any] | None = None):
+        """Importar un dispositivo programáticamente."""
+        if user_input is not None:
+            await self.async_set_unique_id(user_input[CONF_DEVICE_ID])
+            self._abort_if_unique_id_configured()
+            title = user_input.get("name") or user_input[CONF_DEVICE_ID]
+            return self.async_create_entry(title=title, data=user_input)
+        return self.async_abort(reason="unknown")
+
     async def async_step_cloud_credentials(self, user_input: dict[str, Any] | None = None):
+        from .storage import TuyaDeviceStore
+        store = TuyaDeviceStore(self.hass)
+        await store.async_load()
         errors: dict[str, str] = {}
+        
         if user_input is not None:
             try:
                 devices = await async_fetch_cloud_devices(
@@ -106,9 +144,13 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception:
                 errors["base"] = "cloud_error"
 
+        current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
+        current_api_key = store.cloud_config.get(CONF_API_KEY, "")
+        current_api_secret = store.cloud_config.get(CONF_API_SECRET, "")
+
         schema = vol.Schema(
             {
-                vol.Required(CONF_REGION, default=DEFAULT_REGION): SelectSelector(
+                vol.Required(CONF_REGION, default=current_region): SelectSelector(
                     SelectSelectorConfig(
                         options=[
                             SelectOptionDict(value="us", label="América (us)"),
@@ -119,8 +161,8 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
-                vol.Required(CONF_API_KEY): str,
-                vol.Required(CONF_API_SECRET): str,
+                vol.Required(CONF_API_KEY, default=current_api_key): str,
+                vol.Required(CONF_API_SECRET, default=current_api_secret): str,
             }
         )
         return self.async_show_form(
@@ -133,8 +175,37 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             device_id = user_input[CONF_DEVICE_ID]
             if device_id == "import_all":
-                # Create a global cloud config entry that will trigger sync in __init__.py
-                return self.async_create_entry(title="Tuya Cloud", data=self._device_data)
+                # Guardamos las credenciales primero por si son nuevas
+                from .storage import TuyaDeviceStore
+                store = TuyaDeviceStore(self.hass)
+                await store.async_load()
+                store.cloud_config.update({
+                    CONF_API_KEY: self._device_data[CONF_API_KEY],
+                    CONF_API_SECRET: self._device_data[CONF_API_SECRET],
+                    CONF_REGION: self._device_data.get(CONF_REGION, DEFAULT_REGION)
+                })
+                await store.async_save()
+
+                # Crear entrada para cada dispositivo
+                existing_entries = [e.data.get(CONF_DEVICE_ID) for e in self.hass.config_entries.async_entries(DOMAIN)]
+                added = 0
+                for dev in self._cloud_devices:
+                    if dev["device_id"] not in existing_entries:
+                        added += 1
+                        self.hass.async_create_task(
+                            self.hass.config_entries.flow.async_init(
+                                DOMAIN,
+                                context={"source": "import"},
+                                data=dev,
+                            )
+                        )
+                
+                # Crear entrada "Tuya Cloud Hub" para los botones globales si no existe
+                hub_exists = any(e.title == "Omni Tuya Cloud" for e in self.hass.config_entries.async_entries(DOMAIN))
+                if not hub_exists:
+                    return self.async_create_entry(title="Omni Tuya Cloud", data={"hub": True})
+                
+                return self.async_abort(reason="bulk_import_done", description_placeholders={"added": str(added)})
 
             self._selected_cloud_device = next(
                 d for d in self._cloud_devices if d[CONF_DEVICE_ID] == device_id
