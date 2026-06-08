@@ -133,10 +133,7 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
             elif cmd_type == "arm_away":
                 self._requested_state = AlarmControlPanelState.ARMED_AWAY
 
-            device = self.coordinator.devices.get(self.device_id)
-            if device:
-                await device.async_set_values(payload)
-                self.async_write_ha_state()
+            await self.coordinator.async_set_values(self.device_id, payload)
             return
 
         dps_id = self._determine_dps_id()
