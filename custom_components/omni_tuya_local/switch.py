@@ -70,15 +70,19 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs) -> None:
         if self._homekit_type == "switch" and self.dps_id in ("3", "201"):
             # Comederos de mascotas suelen requerir un INT (número de porciones) en lugar de True
-            portions_dps = "202" if self.dps_id == "201" else "4"
-            portions = self.dps(portions_dps)
-            if portions is None:
-                portions = 1
+            if self.dps_id == "201":
+                if not hasattr(self.coordinator, "manual_feed_portions"):
+                    self.coordinator.manual_feed_portions = {}
+                portions = self.coordinator.manual_feed_portions.get(self.device_id, 1)
             else:
-                try:
-                    portions = int(portions)
-                except ValueError:
+                portions = self.dps("4")
+                if portions is None:
                     portions = 1
+                else:
+                    try:
+                        portions = int(portions)
+                    except ValueError:
+                        portions = 1
             await self.coordinator.async_set_value(self.device_id, int(self.dps_id), portions)
             # Revertimos estado interno porque es un botón de una sola acción
             self.async_write_ha_state()

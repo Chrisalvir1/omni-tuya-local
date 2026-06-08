@@ -11,8 +11,9 @@ from .entity import OmniTuyaEntity
 # ── Perfiles predefinidos por device_type (min, max, step, unit) ──────────────
 _DEVICE_NUMBER_PROFILES: dict[str, list[dict]] = {
     "pet_feeder": [
-        {"dps_id": "4",  "alt_dps_ids": ["202"], "name": "Porciones por comida", "min": 1, "max": 20, "step": 1, "unit": ""},
-        {"dps_id": "6",  "alt_dps_ids": ["206"], "name": "Número de comidas/día", "min": 1, "max": 6,  "step": 1, "unit": ""},
+        {"dps_id": "4", "name": "Porciones por comida", "min": 1, "max": 20, "step": 1, "unit": ""},
+        {"dps_id": "6", "name": "Número de comidas/día", "min": 1, "max": 6,  "step": 1, "unit": ""},
+        {"dps_id": "virtual_portions", "name": "Porciones a dispensar", "min": 1, "max": 20, "step": 1, "unit": ""},
     ],
     "air_purifier": [
         {"dps_id": "15", "name": "Temporizar apagado",   "min": 0, "max": 480, "step": 30, "unit": "min"},
@@ -52,16 +53,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     for profile in _DEVICE_NUMBER_PROFILES[device_type]:
                         dps_id = profile["dps_id"]
                         raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
-                        found_id = None
-                        if str(dps_id) in raw_dps:
-                            found_id = dps_id
+                        
+                        if dps_id == "virtual_portions":
+                            # Solo crear la entidad virtual si el dispositivo tiene DP 201 (comedero de video)
+                            if "201" not in raw_dps:
+                                continue
+                            found_id = "virtual_portions"
                         else:
-                            for alt in profile.get("alt_dps_ids", []):
-                                if str(alt) in raw_dps:
-                                    found_id = alt
-                                    break
-                        if found_id is None:
-                            found_id = dps_id
+                            found_id = None
+                            if str(dps_id) in raw_dps:
+                                found_id = dps_id
+                            else:
+                                for alt in profile.get("alt_dps_ids", []):
+                                    if str(alt) in raw_dps:
+                                        found_id = alt
+                                        break
+                            if found_id is None:
+                                continue
 
                         uid = f"{DOMAIN}_{config['device_id']}_num_{found_id}"
                         if uid not in _known_unique_ids:
@@ -80,16 +88,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     for profile in _DEVICE_NUMBER_PROFILES[device_type]:
                         dps_id = profile["dps_id"]
                         raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
-                        found_id = None
-                        if str(dps_id) in raw_dps:
-                            found_id = dps_id
+                        
+                        if dps_id == "virtual_portions":
+                            # Solo crear la entidad virtual si el dispositivo tiene DP 201 (comedero de video)
+                            if "201" not in raw_dps:
+                                continue
+                            found_id = "virtual_portions"
                         else:
-                            for alt in profile.get("alt_dps_ids", []):
-                                if str(alt) in raw_dps:
-                                    found_id = alt
-                                    break
-                        if found_id is None:
-                            found_id = dps_id
+                            found_id = None
+                            if str(dps_id) in raw_dps:
+                                found_id = dps_id
+                            else:
+                                for alt in profile.get("alt_dps_ids", []):
+                                    if str(alt) in raw_dps:
+                                        found_id = alt
+                                        break
+                            if found_id is None:
+                                continue
 
                         uid = f"{DOMAIN}_{config['device_id']}_num_{found_id}"
                         if uid not in _known_unique_ids:
@@ -137,6 +152,11 @@ class OmniTuyaNumber(OmniTuyaEntity, NumberEntity):
 
     @property
     def native_value(self) -> float | None:
+        if self.dps_id == "virtual_portions":
+            if not hasattr(self.coordinator, "manual_feed_portions"):
+                self.coordinator.manual_feed_portions = {}
+            return float(self.coordinator.manual_feed_portions.setdefault(self.device_id, 1))
+
         value = self.dps(self.dps_id)
         if value is None:
             return None
@@ -146,6 +166,13 @@ class OmniTuyaNumber(OmniTuyaEntity, NumberEntity):
             return None
 
     async def async_set_native_value(self, value: float) -> None:
+        if self.dps_id == "virtual_portions":
+            if not hasattr(self.coordinator, "manual_feed_portions"):
+                self.coordinator.manual_feed_portions = {}
+            self.coordinator.manual_feed_portions[self.device_id] = int(value)
+            self.async_write_ha_state()
+            return
+
         # Si el step es entero, enviar int para compatibilidad Tuya
         if self._attr_native_step == int(self._attr_native_step):
             await self.coordinator.async_set_value(self.device_id, int(self.dps_id), int(value))
