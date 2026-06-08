@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.4.4-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-0.5.0-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.6.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
@@ -376,6 +376,7 @@ Los campos son compatibles: `device_id`, `name`, `local_key`, `ip` → `host`, `
 
 | Versión | Cambios |
 |---|---|
+| **0.5.0** | **Mejoras en Sincronización Cloud y Flujo de Configuración**. Ahora puedes importar de forma masiva todos tus dispositivos Tuya de una sola vez durante la configuración inicial. Se agregó una nueva opción maestra para "Actualizar Credenciales de la Nube (API Key/Secret)", permitiéndote renovar tu suscripción de Tuya sin tener que reinstalar la integración. También se añadió un botón global "Sincronizar Nube" en la interfaz para descargar nuevos dispositivos y actualizar sus nombres de manera automática sin sobreescribir la configuración local. |
 | **0.4.4** | **Estabilidad de Polling y Timeout LAN**. Se incrementaron los tiempos de espera a 5.0s y reintentos a 3 para dispositivos lentos (chips baratos Tuya) con pings mayores a 300ms. Se forzó `ConnectionError` en caso de respuestas nulas para gatillar reintentos automáticos, evitando que el dispositivo pase falsamente a estado 'no disponible'. |
 | **0.4.3** | **Auto-recuperación de Versión del Protocolo**. El listener de red UDP ahora detecta y actualiza automáticamente la versión de protocolo local (ej. de 3.3 a 3.4/3.5) de tus dispositivos Tuya en caliente. También se corrigió un problema donde los cambios de versión en la base de datos no forzaban la reconstrucción del cliente local de comunicación de tinytuya. |
 | **0.4.2** | **Ajustes de Conectividad LAN**. Deshabilitados los sockets persistentes por defecto y aumentado el timeout a `5.0s` con `3` reintentos. Esto soluciona problemas donde apagadores y bombillas lentas o con baja señal de red local (Wi-Fi) se quedaban bloqueados o se mostraban "No disponibles" (en gris). |
