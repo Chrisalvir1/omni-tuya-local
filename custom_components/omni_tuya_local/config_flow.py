@@ -101,6 +101,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not self._cloud_devices:
                     errors["base"] = "no_devices"
                 else:
+                    self._device_data = user_input
                     return await self.async_step_choose_cloud_device()
             except Exception:
                 errors["base"] = "cloud_error"
@@ -131,12 +132,19 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_choose_cloud_device(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             device_id = user_input[CONF_DEVICE_ID]
+            if device_id == "import_all":
+                # Create a global cloud config entry that will trigger sync in __init__.py
+                return self.async_create_entry(title="Tuya Cloud", data=self._device_data)
+
             self._selected_cloud_device = next(
                 d for d in self._cloud_devices if d[CONF_DEVICE_ID] == device_id
             )
             return await self.async_step_search_device()
 
         options = [
+            SelectOptionDict(value="import_all", label="⭐ Importar TODOS los dispositivos de la nube a la vez")
+        ]
+        options.extend([
             SelectOptionDict(
                 value=d[CONF_DEVICE_ID],
                 label="{name} — {model} [{id}]".format(
@@ -146,7 +154,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
             )
             for d in sorted(self._cloud_devices, key=lambda item: (item.get("name") or "").lower())
-        ]
+        ])
         return self.async_show_form(
             step_id="choose_cloud_device",
             data_schema=vol.Schema(
@@ -301,17 +309,25 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
             return self.async_abort(reason="no_devices")
 
         if user_input is not None:
+            if user_input["device_id"] == "update_cloud":
+                return await self.async_step_update_cloud()
+            if user_input["device_id"] == "sync_cloud":
+                return await self.async_step_sync_cloud()
             self._selected_device_id = user_input["device_id"]
             return await self.async_step_edit_device()
 
         device_options = {
+            "sync_cloud": "🔄 Sincronizar nuevos dispositivos desde la Nube",
+            "update_cloud": "🔑 Actualizar Credenciales de la Nube (API Key / Secret)",
+        }
+        device_options.update({
             dev_id: "{name}  ·  IP: {ip}  ·  v{ver}".format(
                 name=conf.get("name", dev_id),
                 ip=conf.get("host") or conf.get("ip") or "sin IP",
                 ver=conf.get("version") or "?",
             )
             for dev_id, conf in self._devices.items()
-        }
+        })
 
         return self.async_show_form(
             step_id="init",
@@ -408,6 +424,66 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
                 "local_key_masked": local_key_masked,
             },
             errors=errors,
+        )
+
+    async def async_step_update_cloud(self, user_input: dict[str, Any] | None = None):
+        """Actualizar credenciales de la nube."""
+        from .storage import TuyaDeviceStore
+        store = TuyaDeviceStore(self.hass)
+        await store.async_load()
+        errors = {}
+
+        if user_input is not None:
+            store.cloud_config.update({
+                CONF_REGION: user_input[CONF_REGION],
+                CONF_API_KEY: user_input[CONF_API_KEY],
+                CONF_API_SECRET: user_input[CONF_API_SECRET],
+            })
+            await store.async_save()
+            # Opcional: lanzar una sincronización aquí mismo
+            self.hass.async_create_task(
+                self.hass.services.async_call(DOMAIN, "sync_cloud", {})
+            )
+            return self.async_create_entry(title="", data={})
+
+        current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
+        current_api_key = store.cloud_config.get(CONF_API_KEY, "")
+        current_api_secret = store.cloud_config.get(CONF_API_SECRET, "")
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_REGION, default=current_region): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            SelectOptionDict(value="us", label="América (us)"),
+                            SelectOptionDict(value="eu", label="Europa (eu)"),
+                            SelectOptionDict(value="cn", label="China (cn)"),
+                            SelectOptionDict(value="in", label="India (in)"),
+                        ],
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(CONF_API_KEY, default=current_api_key): str,
+                vol.Required(CONF_API_SECRET, default=current_api_secret): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="update_cloud",
+            data_schema=schema,
+            errors=errors,
+        )
+
+    async def async_step_sync_cloud(self, user_input: dict[str, Any] | None = None):
+        """Disparar sincronización manual con la nube sin modificar credenciales."""
+        if user_input is not None:
+            self.hass.async_create_task(
+                self.hass.services.async_call(DOMAIN, "sync_cloud", {})
+            )
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="sync_cloud",
+            description_placeholders={},
         )
 
 

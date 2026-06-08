@@ -82,6 +82,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator.register_entity_refresh_callback(add_new_entities)
     await add_new_entities()
 
+    # Agregar el botón global de sincronización
+    async_add_entities([OmniTuyaSyncCloudButton(coordinator, entry.entry_id)])
+
+
+class OmniTuyaSyncCloudButton(ButtonEntity):
+    """Botón global para sincronizar dispositivos desde la nube Tuya."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:cloud-sync"
+
+    def __init__(self, coordinator: OmniTuyaLocalCoordinator, entry_id: str) -> None:
+        self.coordinator = coordinator
+        self.entry_id = entry_id
+        self._attr_unique_id = f"{DOMAIN}_{entry_id}_sync_cloud"
+        self._attr_name = "Sincronizar Nube"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, "hub")},
+            "name": "Omni Tuya Local Hub",
+            "manufacturer": "Omni Tuya Local",
+            "model": "Integration Hub",
+        }
+
+    async def async_press(self) -> None:
+        """Activar la sincronización con la nube."""
+        await self.coordinator.hass.services.async_call(DOMAIN, "sync_cloud", {})
+
 
 class OmniTuyaButton(OmniTuyaEntity, ButtonEntity):
     """Botón Tuya (alimentar, limpiar, encender, etc.)."""

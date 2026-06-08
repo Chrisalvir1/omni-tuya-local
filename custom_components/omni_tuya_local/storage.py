@@ -69,8 +69,17 @@ class TuyaDeviceStore:
                 if not dev_id or not str(dev_id).strip():
                     _LOGGER.warning("Skipping device with empty device_id during bulk import")
                     continue
-                self._devices[dev_id] = normalized
-                imported.append(normalized)
+                # Merge if exists
+                if dev_id in self._devices:
+                    existing = self._devices[dev_id]
+                    # Update name and local_key from cloud
+                    existing["name"] = normalized.get("name") or existing.get("name")
+                    existing["local_key"] = normalized.get("local_key") or existing.get("local_key")
+                    self._devices[dev_id] = existing
+                    imported.append(existing)
+                else:
+                    self._devices[dev_id] = normalized
+                    imported.append(normalized)
             except Exception as err:
                 _LOGGER.warning("Failed to import device %s: %s", config.get("device_id", "?"), err)
         if imported:
