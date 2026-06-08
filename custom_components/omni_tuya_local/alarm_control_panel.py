@@ -43,6 +43,10 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
     _attr_code_arm_required = False
     _attr_code_format = None
 
+    def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict) -> None:
+        super().__init__(coordinator, config, "1")
+        self._requested_state: AlarmControlPanelState | None = None
+
     def _determine_dps_id(self) -> str:
         """Determinar dinámicamente qué DP controla el estado de la alarma."""
         dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
@@ -52,12 +56,28 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
                 return cand
         return "1"
 
+    def _is_multizone(self) -> bool:
+        """Verificar si el dispositivo es una alarma multizona (eMacros solar)."""
+        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
+        return "109" in dps_dict and "110" in dps_dict and "111" in dps_dict and "112" in dps_dict
+
     @property
     def name(self) -> str:
         return self.config.get("name") or self.device_id
 
     @property
     def alarm_state(self) -> AlarmControlPanelState:
+        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
+        
+        if self._is_multizone():
+            # Si alguna de las zonas (109-112) está activada (True), el sistema está armado
+            zones_active = any(dps_dict.get(z) is True for z in ("109", "110", "111", "112"))
+            if zones_active:
+                if self._requested_state in (AlarmControlPanelState.ARMED_HOME, AlarmControlPanelState.ARMED_AWAY):
+                    return self._requested_state
+                return AlarmControlPanelState.ARMED_AWAY
+            return AlarmControlPanelState.DISARMED
+
         dps_id = self._determine_dps_id()
         raw_val = self.dps(dps_id)
         if raw_val is None:
@@ -86,6 +106,35 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
         return AlarmControlPanelState.DISARMED
 
     async def _send_command(self, cmd_type: str) -> None:
+        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
+        
+        if self._is_multizone():
+            val_to_send = True if cmd_type in ("arm_home", "arm_away") else False
+            payload = {
+                "109": val_to_send,
+                "110": val_to_send,
+                "111": val_to_send,
+                "112": val_to_send,
+            }
+            if "113" in dps_dict:
+                payload["113"] = "ON" if val_to_send else "OFF"
+            if "123" in dps_dict:
+                payload["123"] = val_to_send
+
+            # Guardamos estado deseado localmente para consistencia en la interfaz
+            if cmd_type == "disarm":
+                self._requested_state = AlarmControlPanelState.DISARMED
+            elif cmd_type == "arm_home":
+                self._requested_state = AlarmControlPanelState.ARMED_HOME
+            elif cmd_type == "arm_away":
+                self._requested_state = AlarmControlPanelState.ARMED_AWAY
+
+            device = self.coordinator.devices.get(self.device_id)
+            if device:
+                await device.async_set_values(payload)
+                self.async_write_ha_state()
+            return
+
         dps_id = self._determine_dps_id()
         current_val = self.dps(dps_id)
 
