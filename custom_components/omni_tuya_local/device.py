@@ -40,15 +40,23 @@ class OmniTuyaDevice:
         return self._consecutive_failures
 
     def update_config(self, config: dict[str, Any]) -> None:
-        """Actualizar configuración del dispositivo (ej: nueva IP) sin reconstruir."""
+        """Actualizar configuración del dispositivo (ej: nueva IP, versión, o local key) sin reconstruir."""
         old_host = self.config.host
+        old_version = self.config.version
+        old_local_key = self.config.local_key
+        
         self.config = TuyaDeviceConfig.from_dict(config)
-        if self.config.host != old_host:
-            # IP cambió — invalidar cliente para forzar reconexión
+        
+        if (
+            self.config.host != old_host
+            or self.config.version != old_version
+            or self.config.local_key != old_local_key
+        ):
+            # IP, versión o local key cambió — invalidar cliente para forzar reconexión
             self._tuya = None
             _LOGGER.info(
-                "Device %s IP changed %s → %s, reconnecting",
-                self.device_id, old_host, self.config.host,
+                "Device %s config updated (IP: %s → %s, Ver: %s → %s), reconnecting",
+                self.device_id, old_host, self.config.host, old_version, self.config.version,
             )
 
     def _build_tuya(self):

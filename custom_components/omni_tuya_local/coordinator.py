@@ -178,21 +178,33 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         config = self.store.get(device_id)
         if config:
             current_ip = config.get("host") or config.get("ip") or ""
+            current_version = config.get("version") or "3.3"
+            
+            needs_update = False
+            updated = dict(config)
+            
             if current_ip != ip:
                 _LOGGER.info(
                     "Device %s dynamic IP changed: %s → %s. Updating automatically.",
                     device_id, current_ip, ip
                 )
-                self.hass.async_create_task(self._async_update_device_ip(device_id, ip))
+                updated["host"] = ip
+                updated["ip"] = ip
+                needs_update = True
+                
+            if version and str(version) != str(current_version):
+                _LOGGER.info(
+                    "Device %s protocol version changed: %s → %s. Updating automatically.",
+                    device_id, current_version, version
+                )
+                updated["version"] = str(version)
+                needs_update = True
+                
+            if needs_update:
+                self.hass.async_create_task(self._async_update_device(updated))
 
-    async def _async_update_device_ip(self, device_id: str, ip: str) -> None:
-        config = self.store.get(device_id)
-        if not config:
-            return
-        updated = dict(config)
-        updated["host"] = ip
-        updated["ip"] = ip
-        await self.store.add(updated)
+    async def _async_update_device(self, config: dict[str, Any]) -> None:
+        await self.store.add(config)
         await self.async_reload_devices()
 
     async def async_shutdown(self) -> None:
