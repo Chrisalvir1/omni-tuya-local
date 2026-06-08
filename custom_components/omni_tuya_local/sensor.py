@@ -13,7 +13,6 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
-    UnitOfIlluminance,
     UnitOfPower,
     UnitOfTemperature,
 )
@@ -36,8 +35,8 @@ _SENSOR_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorSt
     "wsdcg_hum": (SensorDeviceClass.HUMIDITY, PERCENTAGE, SensorStateClass.MEASUREMENT),
 
     # Iluminancia (lux)
-    "illuminance_sensor": (SensorDeviceClass.ILLUMINANCE, UnitOfIlluminance.LUX, SensorStateClass.MEASUREMENT),
-    "cgq": (SensorDeviceClass.ILLUMINANCE, UnitOfIlluminance.LUX, SensorStateClass.MEASUREMENT),
+    "illuminance_sensor": (SensorDeviceClass.ILLUMINANCE, "lx", SensorStateClass.MEASUREMENT),
+    "cgq": (SensorDeviceClass.ILLUMINANCE, "lx", SensorStateClass.MEASUREMENT),
 
     # PM2.5 / calidad del aire
     "pm25_sensor": (SensorDeviceClass.PM25, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, SensorStateClass.MEASUREMENT),
@@ -73,7 +72,7 @@ _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorState
     "hum": (SensorDeviceClass.HUMIDITY, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "humidity": (SensorDeviceClass.HUMIDITY, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "temperature": (SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT),
-    "illuminance": (SensorDeviceClass.ILLUMINANCE, UnitOfIlluminance.LUX, SensorStateClass.MEASUREMENT),
+    "illuminance": (SensorDeviceClass.ILLUMINANCE, "lx", SensorStateClass.MEASUREMENT),
     "co2": (SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, SensorStateClass.MEASUREMENT),
     "pm25": (SensorDeviceClass.PM25, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, SensorStateClass.MEASUREMENT),
     "cur_power": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
