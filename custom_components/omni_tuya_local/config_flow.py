@@ -172,20 +172,21 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_choose_cloud_device(self, user_input: dict[str, Any] | None = None):
+        # Guardar credenciales de forma persistente inmediatamente si venimos de la pantalla de credenciales
+        if self._device_data and CONF_API_KEY in self._device_data:
+            from .storage import TuyaDeviceStore
+            store = TuyaDeviceStore(self.hass)
+            await store.async_load()
+            store.cloud_config.update({
+                CONF_API_KEY: self._device_data[CONF_API_KEY],
+                CONF_API_SECRET: self._device_data[CONF_API_SECRET],
+                CONF_REGION: self._device_data.get(CONF_REGION, DEFAULT_REGION)
+            })
+            await store.async_save()
+
         if user_input is not None:
             device_id = user_input[CONF_DEVICE_ID]
             if device_id == "import_all":
-                # Guardamos las credenciales primero por si son nuevas
-                from .storage import TuyaDeviceStore
-                store = TuyaDeviceStore(self.hass)
-                await store.async_load()
-                store.cloud_config.update({
-                    CONF_API_KEY: self._device_data[CONF_API_KEY],
-                    CONF_API_SECRET: self._device_data[CONF_API_SECRET],
-                    CONF_REGION: self._device_data.get(CONF_REGION, DEFAULT_REGION)
-                })
-                await store.async_save()
-
                 # Crear entrada para cada dispositivo
                 existing_entries = [e.data.get(CONF_DEVICE_ID) for e in self.hass.config_entries.async_entries(DOMAIN)]
                 added = 0
