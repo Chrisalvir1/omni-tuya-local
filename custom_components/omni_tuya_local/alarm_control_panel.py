@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelEntity,
     AlarmControlPanelEntityFeature,
@@ -46,6 +48,7 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict) -> None:
         super().__init__(coordinator, config, "1")
         self._requested_state: AlarmControlPanelState | None = None
+        self._last_command_time: float = 0.0
 
     def _determine_dps_id(self) -> str:
         """Determinar dinámicamente qué DP controla el estado de la alarma."""
@@ -73,6 +76,8 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
         dps_dict = device.dps if device else {}
         
         if self._is_multizone():
+            if self._requested_state is not None and (time.time() - self._last_command_time < 10):
+                return self._requested_state
             # Si alguna de las zonas (109-112) está activada (True), el sistema está armado
             zones_active = any(dps_dict.get(z) is True for z in ("109", "110", "111", "112"))
             if zones_active:
@@ -126,6 +131,7 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
                 payload["123"] = val_to_send
 
             # Guardamos estado deseado localmente para consistencia en la interfaz
+            self._last_command_time = time.time()
             if cmd_type == "disarm":
                 self._requested_state = AlarmControlPanelState.DISARMED
             elif cmd_type == "arm_home":
