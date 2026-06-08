@@ -143,7 +143,7 @@ class OmniTuyaDevice:
                         timeout=_TUYA_TIMEOUT,
                     )
                     if dps is not None:
-                        self._last_dps = dps
+                        self._last_dps.update(dps)
                         self._available = True
                         self._consecutive_failures = 0
                         return self.dps

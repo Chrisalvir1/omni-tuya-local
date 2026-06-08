@@ -46,8 +46,8 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
     def _determine_dps_id(self) -> str:
         """Determinar dinámicamente qué DP controla el estado de la alarma."""
         raw_dps = self.coordinator.dps_value(self.device_id) or {}
-        # Lista de candidatos comunes: 1 (estándar), 123 (eMacros), 113 (chime/ON/OFF)
-        for cand in ("1", "123", "113", "109"):
+        # Lista de candidatos comunes: 123 (eMacros), 113 (chime/ON/OFF), 1 (estándar)
+        for cand in ("123", "113", "1"):
             if cand in raw_dps:
                 return cand
         return "1"
