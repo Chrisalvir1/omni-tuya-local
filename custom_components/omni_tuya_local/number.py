@@ -15,6 +15,9 @@ _DEVICE_NUMBER_PROFILES: dict[str, list[dict]] = {
         {"dps_id": "6", "name": "Número de comidas/día", "min": 1, "max": 6,  "step": 1, "unit": ""},
         {"dps_id": "virtual_portions", "name": "Porciones a dispensar", "min": 1, "max": 20, "step": 1, "unit": ""},
     ],
+    "alarm_kit": [
+        {"dps_id": "41", "name": "Volumen de alarma", "min": 0, "max": 10, "step": 1, "unit": ""},
+    ],
     "air_purifier": [
         {"dps_id": "15", "name": "Temporizar apagado",   "min": 0, "max": 480, "step": 30, "unit": "min"},
     ],
