@@ -27,7 +27,7 @@ _DEVICE_TYPE_TO_CLASS: dict[str, BinarySensorDeviceClass] = {
     # Humo / gas / CO
     "smoke_sensor": BinarySensorDeviceClass.SMOKE,
     "gas_sensor": BinarySensorDeviceClass.GAS,
-    "co_sensor": BinarySensorDeviceClass.CARBON_MONOXIDE,
+    "co_sensor": BinarySensorDeviceClass.CO,
 
     # Agua / humedad
     "water_leak_sensor": BinarySensorDeviceClass.MOISTURE,
