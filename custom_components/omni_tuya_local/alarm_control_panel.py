@@ -49,7 +49,8 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
 
     def _determine_dps_id(self) -> str:
         """Determinar dinámicamente qué DP controla el estado de la alarma."""
-        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
+        device = self.coordinator.devices.get(self.device_id)
+        dps_dict = device.dps if device else {}
         # Lista de candidatos comunes: 123 (eMacros), 113 (chime/ON/OFF), 1 (estándar)
         for cand in ("123", "113", "1"):
             if cand in dps_dict:
@@ -58,7 +59,8 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
 
     def _is_multizone(self) -> bool:
         """Verificar si el dispositivo es una alarma multizona (eMacros solar)."""
-        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
+        device = self.coordinator.devices.get(self.device_id)
+        dps_dict = device.dps if device else {}
         return "109" in dps_dict and "110" in dps_dict and "111" in dps_dict and "112" in dps_dict
 
     @property
@@ -67,7 +69,8 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
 
     @property
     def alarm_state(self) -> AlarmControlPanelState:
-        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
+        device = self.coordinator.devices.get(self.device_id)
+        dps_dict = device.dps if device else {}
         
         if self._is_multizone():
             # Si alguna de las zonas (109-112) está activada (True), el sistema está armado
@@ -106,7 +109,8 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
         return AlarmControlPanelState.DISARMED
 
     async def _send_command(self, cmd_type: str) -> None:
-        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
+        device = self.coordinator.devices.get(self.device_id)
+        dps_dict = device.dps if device else {}
         
         if self._is_multizone():
             val_to_send = True if cmd_type in ("arm_home", "arm_away") else False
