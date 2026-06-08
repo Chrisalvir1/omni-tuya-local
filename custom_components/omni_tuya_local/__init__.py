@@ -235,14 +235,20 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         return {"device": stored}
 
     async def scan_network(call: ServiceCall) -> dict[str, Any]:
-        coord = _coordinator(hass, entry_id)
-        found = await async_scan_network(hass, list(coord.store.all().values()))
+        store = TuyaDeviceStore(hass)
+        await store.async_load()
+        found = await async_scan_network(hass, list(store.all().values()))
         added = 0
         for device in found:
             if device.get("synced") and device.get(CONF_LOCAL_KEY):
-                await coord.async_add_device(device)
+                await store.add(device)
                 added += 1
-        return {"found": len(found), "added": added, "devices": found}
+
+        if added > 0:
+            for coord in hass.data[DOMAIN].values():
+                await coord.async_reload_devices()
+
+        return {"found": len(found), "updated": added, "devices": found}
 
     async def sync_cloud(call: ServiceCall) -> dict[str, Any]:
         store = TuyaDeviceStore(hass)

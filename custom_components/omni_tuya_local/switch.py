@@ -68,10 +68,17 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         return attrs
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
+        if self._homekit_type == "switch" and self.dps_id == "3":
+            # Comederos de mascotas suelen requerir un INT (número de porciones) en lugar de True
+            await self.coordinator.async_set_value(self.device_id, int(self.dps_id), 1)
+            # Revertimos estado interno porque es un botón de una sola acción
+            self.async_write_ha_state()
+        else:
+            await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
+        if not (self._homekit_type == "switch" and self.dps_id == "3"):
+            await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
 
 
 _PREDEFINED_SWITCHES: dict[str, list[tuple[str, str | None]]] = {

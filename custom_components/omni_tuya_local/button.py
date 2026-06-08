@@ -16,7 +16,6 @@ from .entity import OmniTuyaEntity
 # pero con botones bien nombrados la experiencia en HA y HomeKit es óptima.
 _DEVICE_BUTTONS: dict[str, list[dict[str, Any]]] = {
     "pet_feeder": [
-        {"dps_id": "3",  "name": "Alimentar ahora",   "dps_value": True, "icon": "mdi:food-outline"},
         {"dps_id": "5",  "name": "Limpiar tolva",      "dps_value": True, "icon": "mdi:broom"},
     ],
     "ir_remote": [
@@ -152,6 +151,8 @@ class OmniTuyaButton(OmniTuyaEntity, ButtonEntity):
         """Activar el botón."""
         value = self._dps_value
         if isinstance(value, str):
+            await self.coordinator.async_set_value(self.device_id, int(self.dps_id), value)
+        elif isinstance(value, int) and not isinstance(value, bool):
             await self.coordinator.async_set_value(self.device_id, int(self.dps_id), value)
         else:
             await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))

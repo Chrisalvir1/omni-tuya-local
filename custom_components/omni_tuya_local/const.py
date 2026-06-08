@@ -1,6 +1,6 @@
 DOMAIN = "omni_tuya_local"
-INTEGRATION_VERSION = "0.5.3"
-BUILD_NUMBER = "20260607.10"
+INTEGRATION_VERSION = "0.5.4"
+BUILD_NUMBER = "20260607.11"
 
 CONF_REGION = "region"
 CONF_API_KEY = "api_key"
@@ -182,6 +182,7 @@ HOMEKIT_SWITCH_TYPES: dict[str, str] = {
     "valve": "valve",
     "water_fountain": "faucet",
     "pump": "valve",
+    "pet_feeder": "switch",
 }
 
 HOMEKIT_FAN_TYPES: dict[str, str] = {
