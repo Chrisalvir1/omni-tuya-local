@@ -45,10 +45,10 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
 
     def _determine_dps_id(self) -> str:
         """Determinar dinámicamente qué DP controla el estado de la alarma."""
-        raw_dps = self.coordinator.dps_value(self.device_id) or {}
+        dps_dict = (self.coordinator.data or {}).get("dps", {}).get(self.device_id, {})
         # Lista de candidatos comunes: 123 (eMacros), 113 (chime/ON/OFF), 1 (estándar)
         for cand in ("123", "113", "1"):
-            if cand in raw_dps:
+            if cand in dps_dict:
                 return cand
         return "1"
 
@@ -87,8 +87,7 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
 
     async def _send_command(self, cmd_type: str) -> None:
         dps_id = self._determine_dps_id()
-        raw_dps = self.coordinator.dps_value(self.device_id) or {}
-        current_val = raw_dps.get(dps_id)
+        current_val = self.dps(dps_id)
 
         # Mapear valor según el tipo de dato nativo del DP
         val_to_send: any = "disarmed"
