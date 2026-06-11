@@ -31,6 +31,9 @@ _DEVICE_BUTTONS: dict[str, list[dict[str, Any]]] = {
     "kettle": [
         {"dps_id": "1", "name": "Hervir",              "dps_value": True, "icon": "mdi:kettle"},
     ],
+    "alarm_kit": [
+        {"dps_id": "113", "alt_dps_ids": ["123", "1"], "name": "Pánico / SOS", "dps_value": "sos", "icon": "mdi:alert-decagram"},
+    ],
 }
 
 
@@ -176,11 +179,24 @@ class OmniTuyaButton(OmniTuyaEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Activar el botón."""
         value = self._dps_value
+        current_val = self.dps(self.dps_id)
+
+        # Conversión dinámica para comandos de pánico en alarmas
+        if isinstance(value, str) and value == "sos":
+            if isinstance(current_val, bool):
+                value = True
+            elif str(current_val).upper() in ("ON", "OFF"):
+                value = "ON"
+
         if isinstance(value, str):
             await self.coordinator.async_set_value(self.device_id, int(self.dps_id), value)
         elif isinstance(value, int) and not isinstance(value, bool):
             await self.coordinator.async_set_value(self.device_id, int(self.dps_id), value)
         else:
-            await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
-            await asyncio.sleep(0.25)
-            await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
+            # Para booleanos, si es Pánico/SOS enviamos True permanente (se apaga desarmando)
+            if self._desc.get("name") == "Pánico / SOS":
+                await self.coordinator.async_set_status(self.device_id, value if isinstance(value, bool) else True, int(self.dps_id))
+            else:
+                await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
+                await asyncio.sleep(0.25)
+                await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))

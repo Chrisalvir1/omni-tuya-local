@@ -72,7 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                         found_id = alt
                                         break
                             if found_id is None:
-                                continue
+                                found_id = dps_id
 
                         uid = f"{DOMAIN}_{config['device_id']}_num_{found_id}"
                         if uid not in _known_unique_ids:
@@ -107,7 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                         found_id = alt
                                         break
                             if found_id is None:
-                                continue
+                                found_id = dps_id
 
                         uid = f"{DOMAIN}_{config['device_id']}_num_{found_id}"
                         if uid not in _known_unique_ids:

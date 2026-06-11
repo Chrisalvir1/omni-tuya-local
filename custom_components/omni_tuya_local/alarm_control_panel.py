@@ -39,6 +39,7 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
     _attr_supported_features = (
         AlarmControlPanelEntityFeature.ARM_AWAY
         | AlarmControlPanelEntityFeature.ARM_HOME
+        | AlarmControlPanelEntityFeature.TRIGGER
     )
 
     # Indicar a HA que no requiere código PIN para armar/desarmar
@@ -118,6 +119,24 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
         dps_dict = device.dps if device else {}
         
         if self._is_multizone():
+            if cmd_type == "trigger":
+                # Forzar estado de disparo en zonas e iniciar sirena
+                payload = {
+                    "109": True,
+                    "110": True,
+                    "111": True,
+                    "112": True,
+                }
+                if "113" in dps_dict:
+                    payload["113"] = "ON"
+                if "123" in dps_dict:
+                    payload["123"] = True
+                
+                self._last_command_time = time.time()
+                self._requested_state = AlarmControlPanelState.TRIGGERED
+                await self.coordinator.async_set_values(self.device_id, payload)
+                return
+
             val_to_send = True if cmd_type in ("arm_home", "arm_away") else False
             payload = {
                 "109": val_to_send,
@@ -168,6 +187,13 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
                 val_to_send = "ON"
             else:
                 val_to_send = "away"
+        elif cmd_type == "trigger":
+            if isinstance(current_val, bool):
+                val_to_send = True
+            elif str(current_val).upper() in ("ON", "OFF"):
+                val_to_send = "ON"
+            else:
+                val_to_send = "sos"
 
         await self.coordinator.async_set_value(self.device_id, int(dps_id), val_to_send)
 
@@ -179,3 +205,6 @@ class OmniTuyaAlarm(OmniTuyaEntity, AlarmControlPanelEntity):
 
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
         await self._send_command("arm_away")
+
+    async def async_alarm_trigger(self, code: str | None = None) -> None:
+        await self._send_command("trigger")
