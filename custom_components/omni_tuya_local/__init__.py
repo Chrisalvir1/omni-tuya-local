@@ -298,6 +298,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
             device = coord.devices.get(dev_id)
             devices_info.append({
                 "device_id": dev_id,
+                "local_key": config.get("local_key"),
                 "name": config.get("name"),
                 "host": config.get("host") or config.get("ip") or "",
                 "version": config.get("version"),
