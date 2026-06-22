@@ -11,9 +11,9 @@ from .models import TuyaDeviceConfig
 _LOGGER = logging.getLogger(__name__)
 
 # Tiempo máximo de espera para cualquier operación LAN
-_TUYA_TIMEOUT = 5
+_TUYA_TIMEOUT = 2
 # Reintentos antes de marcar unavailable
-_MAX_STATUS_RETRIES = 3
+_MAX_STATUS_RETRIES = 1
 
 
 class OmniTuyaDevice:

@@ -30,13 +30,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
-    _attr_supported_features = VacuumEntityFeature.START | VacuumEntityFeature.STOP | VacuumEntityFeature.RETURN_HOME
+    _attr_supported_features = VacuumEntityFeature.START | VacuumEntityFeature.STOP | VacuumEntityFeature.RETURN_HOME | VacuumEntityFeature.PAUSE
 
     @property
     def state(self) -> str | None:
         value = self.dps("1")
         if value is True or value == "on":
             return "cleaning"
+            
+        # Check DP 3 for chargego state or DP 5 for goto_charge
+        mode = self.dps("3")
+        if isinstance(mode, str):
+            mode = mode.lower()
+        if mode in ("chargego", "charge", "charging", "dock", "docked"):
+            return "docked"
+            
+        status = self.dps("5")
+        if isinstance(status, str):
+            status = status.lower()
+        if status in ("goto_charge", "charge", "charging", "dock", "docked"):
+            return "docked"
+
+        if isinstance(value, str):
+            value = value.lower()
         if value in ("charge", "charging", "dock", "docked"):
             return "docked"
         return "idle"
@@ -46,6 +62,24 @@ class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
 
     async def async_stop(self, **kwargs) -> None:
         await self.coordinator.async_set_status(self.device_id, False, 1)
+        
+    async def async_pause(self, **kwargs) -> None:
+        await self.async_stop(**kwargs)
 
     async def async_return_to_base(self, **kwargs) -> None:
-        await self.coordinator.async_set_value(self.device_id, 1, "charge")
+        # Enviar comandos a los DPs conocidos de dock sin depender de raw_dps
+        # Evitamos enviar a DP 1 (que suele ser el interruptor on/off) para no
+        # sobreescribir el comando de dock con un "stop/inactivo".
+        commands = [
+            (101, "Charge"),
+            (104, "Charge"),
+            (3, "chargego"),
+            (5, "goto_charge")
+        ]
+        
+        import asyncio
+        tasks = [
+            self.coordinator.async_set_value(self.device_id, dps_id, val)
+            for dps_id, val in commands
+        ]
+        await asyncio.gather(*tasks, return_exceptions=True)

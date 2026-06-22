@@ -22,8 +22,8 @@ _DEVICE_BUTTONS: dict[str, list[dict[str, Any]]] = {
         {"dps_id": "1", "name": "Encender/Apagar", "dps_value": "power", "icon": "mdi:power"},
     ],
     "robot_vacuum": [
-        {"dps_id": "1", "name": "Iniciar limpieza",    "dps_value": "start",  "icon": "mdi:robot-vacuum"},
-        {"dps_id": "1", "name": "Volver a base",       "dps_value": "charge", "icon": "mdi:home"},
+        {"dps_id": "1", "name": "Iniciar limpieza",    "dps_value": True,  "icon": "mdi:robot-vacuum"},
+        {"dps_id": "3", "name": "Volver a base",       "dps_value": "chargego", "icon": "mdi:home-import-outline"},
     ],
     "coffee_maker": [
         {"dps_id": "1", "name": "Preparar café",       "dps_value": True, "icon": "mdi:coffee"},
@@ -187,6 +187,10 @@ class OmniTuyaButton(OmniTuyaEntity, ButtonEntity):
                 value = True
             elif str(current_val).upper() in ("ON", "OFF"):
                 value = "ON"
+
+        # Conversión dinámica para el botón Volver a base
+        if self._desc.get("name") == "Volver a base" and self.dps_id == "1":
+            value = "Charge"
 
         if isinstance(value, str):
             await self.coordinator.async_set_value(self.device_id, int(self.dps_id), value)

@@ -71,8 +71,27 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
         return self._has_dps(DPS_HSV)
 
     @property
+    def _brightness_dps(self) -> str | None:
+        """Determinar dinámicamente el DPS de brillo (Tuya usa 3, 2 o 22)."""
+        dps_map = self.config.get("dps_map") or {}
+        for k, v in dps_map.items():
+            if v == "brightness":
+                return str(k)
+
+        dps_2 = self.dps("2")
+        # En dimmers (como ELEGRP), DPS 2 es el brillo real (int) y DPS 3 es el límite mínimo.
+        # En bombillos RGB estándar, DPS 2 es modo ("white", "colour") y DPS 3 es brillo.
+        if self._has_dps("2") and isinstance(dps_2, int):
+            return "2"
+
+        for dps in (DPS_BRIGHTNESS, "22"):
+            if self._has_dps(dps):
+                return dps
+        return None
+
+    @property
     def _supports_brightness(self) -> bool:
-        return self._has_dps(DPS_BRIGHTNESS)
+        return self._brightness_dps is not None
 
     @property
     def _supports_color_temp(self) -> bool:
@@ -115,9 +134,10 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
 
     @property
     def brightness(self) -> int | None:
-        if not self._supports_brightness:
+        dps_id = self._brightness_dps
+        if not dps_id:
             return None
-        value = self.dps(DPS_BRIGHTNESS)
+        value = self.dps(dps_id)
         if value is None:
             return None
         try:
@@ -163,9 +183,10 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         payload_dps: dict[int, Any] = {1: True}
 
-        if ATTR_BRIGHTNESS in kwargs and self._supports_brightness:
+        dps_bright = self._brightness_dps
+        if ATTR_BRIGHTNESS in kwargs and dps_bright:
             tuya_bright = ha_to_tuya_brightness(kwargs[ATTR_BRIGHTNESS])
-            payload_dps[int(DPS_BRIGHTNESS)] = tuya_bright
+            payload_dps[int(dps_bright)] = tuya_bright
 
         if ATTR_HS_COLOR in kwargs and self._supports_hs_color:
             hs = kwargs[ATTR_HS_COLOR]
