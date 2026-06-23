@@ -39,6 +39,13 @@ class TuyaDeviceConfig:
     gateway_local_key: str = ""
     online: bool | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    # Product-schema-derived pet-feeder controls and local serving preference.
+    tuya_functions: list[dict[str, Any]] = field(default_factory=list)
+    manual_feed_portions: int = 1
+    pet_feeder_feed_dp: str = ""
+    pet_feeder_feed_kind: str = ""
+    pet_feeder_clean_hopper_dp: str = ""
+    pet_feeder_clean_hopper_value: Any = True
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TuyaDeviceConfig":
@@ -63,6 +70,12 @@ class TuyaDeviceConfig:
             gateway_local_key=str(data.get("gateway_local_key") or ""),
             online=data.get("online"),
             raw=dict(data.get("raw") or {}),
+            tuya_functions=list(data.get("tuya_functions") or []),
+            manual_feed_portions=max(1, int(data.get("manual_feed_portions") or 1)),
+            pet_feeder_feed_dp=str(data.get("pet_feeder_feed_dp") or ""),
+            pet_feeder_feed_kind=str(data.get("pet_feeder_feed_kind") or ""),
+            pet_feeder_clean_hopper_dp=str(data.get("pet_feeder_clean_hopper_dp") or ""),
+            pet_feeder_clean_hopper_value=data.get("pet_feeder_clean_hopper_value", True),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -88,6 +101,12 @@ class TuyaDeviceConfig:
             "gateway_local_key": self.gateway_local_key,
             "online": self.online,
             "raw": self.raw,
+            "tuya_functions": self.tuya_functions,
+            "manual_feed_portions": self.manual_feed_portions,
+            "pet_feeder_feed_dp": self.pet_feeder_feed_dp,
+            "pet_feeder_feed_kind": self.pet_feeder_feed_kind,
+            "pet_feeder_clean_hopper_dp": self.pet_feeder_clean_hopper_dp,
+            "pet_feeder_clean_hopper_value": self.pet_feeder_clean_hopper_value,
         }
 
     @property

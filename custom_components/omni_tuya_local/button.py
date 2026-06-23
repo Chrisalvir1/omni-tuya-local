@@ -10,13 +10,15 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
 from .entity import OmniTuyaEntity
+from .pet_feeder import pet_feeder_clean_hopper
 
 # ── Mapeo device_type → botones con DPS y nombre ────────────────────────────
 # El pet feeder NO tiene un tipo de entidad específico en HomeKit,
 # pero con botones bien nombrados la experiencia en HA y HomeKit es óptima.
 _DEVICE_BUTTONS: dict[str, list[dict[str, Any]]] = {
     "pet_feeder": [
-        {"dps_id": "5", "alt_dps_ids": ["105"], "name": "Limpiar tolva", "dps_value": True, "icon": "mdi:broom"},
+        # There is no universal Tuya DP for emptying/cleaning a hopper.  This
+        # button is created only when the product function schema declares it.
     ],
     "ir_remote": [
         {"dps_id": "1", "name": "Encender/Apagar", "dps_value": "power", "icon": "mdi:power"},
@@ -116,6 +118,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                     {"name": btn["name"], "icon": btn.get("icon"), "value": btn.get("dps_value", True)},
                                 )
                             )
+
+            # This is independent of the primary entity domain.  It also keeps
+            # a feeder imported as a switch from accidentally losing its clean
+            # action just because the primary export domain changes.
+            if device_type == "pet_feeder":
+                clean = pet_feeder_clean_hopper(config)
+                if clean:
+                    dps_id, value = clean
+                    uid = f"{DOMAIN}_{config['device_id']}_btn_{dps_id}_clean_hopper"
+                    if uid not in _known_unique_ids:
+                        _known_unique_ids.add(uid)
+                        entities.append(OmniTuyaButton(
+                            coordinator, config, dps_id,
+                            {"name": "Limpiar tolva", "icon": "mdi:broom", "value": value},
+                        ))
 
         if entities:
             async_add_entities(entities)

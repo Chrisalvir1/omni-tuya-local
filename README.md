@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.5.0-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-0.5.24-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.6.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
@@ -51,6 +51,24 @@ App / HA  ──────►  Omni Tuya Local  ──────►  Disposi
 | `humidifier` | `humidifier.nombre` | Humidificadores y equipos similares |
 
 Además de la plataforma técnica, cada dispositivo puede tener un **tipo real** para icono y semántica: cafetera, cocina, microondas, robot aspirador, kit de alarma, sirena, purificador, comedero de mascotas, riego, válvula, bomba, sensores, cerradura, cortina, persiana, regleta, tomacorriente y más.
+
+### Comederos de mascotas con cámara
+
+Al sincronizar desde Tuya Cloud, Omni consulta el esquema de funciones del producto y detecta el DP de alimentación manual (`feed_publish` o `manual_feed`). Se crean estas entidades estables, basadas en el `device_id` de Tuya y no en la IP:
+
+- `number.*_porciones_por_comida`: cantidad (1–20) que se conserva tras reiniciar Home Assistant.
+- `switch.*_alimentar_ahora`: envía esa cantidad al DP correcto y vuelve a apagarse, apto para HomeKit Bridge.
+- `button.*_limpiar_tolva`: sólo se muestra si el fabricante declaró explícitamente un DP de limpieza/vaciado. No se adivina un DP para evitar cambiar una configuración por error.
+
+La cámara IPC de Tuya no expone su vídeo LAN a través del protocolo DPS/TinyTuya. Para agregar vídeo en Home Assistant se requiere una URL RTSP/ONVIF que el modelo publique o una integración de cámara que soporte el servicio P2P del fabricante; Omni no inventa una entidad de cámara sin una fuente de stream verificable.
+
+#### Apple Home, HomeKit Bridge y Matter
+
+Incluye únicamente `switch.*_alimentar_ahora` en **HomeKit Bridge**. Apple Home lo presenta como un interruptor momentáneo: al encenderlo, Omni entrega la cantidad guardada y lo apaga de nuevo.
+
+Apple Home no ofrece un selector numérico nativo para una entidad `number` de Home Assistant. Para elegir porciones desde Apple Home, crea escenas o interruptores auxiliares (por ejemplo, **Dar 1 porción**, **Dar 2 porciones**) que primero ajusten `number.*_porciones_por_comida` y luego activen `switch.*_alimentar_ahora`. Matter no añade un tipo estándar de comedero ni resuelve ese selector; para este caso HomeKit Bridge es la ruta recomendada.
+
+> No incluyas `button.*_limpiar_tolva` en Apple Home: es una acción de mantenimiento y debe quedar disponible sólo en Home Assistant.
 
 ---
 
@@ -376,6 +394,8 @@ Los campos son compatibles: `device_id`, `name`, `local_key`, `ip` → `host`, `
 
 | Versión | Cambios |
 |---|---|
+| **0.5.24** | **Perfil seguro para comederos Tuya con cámara**. Importa el esquema oficial de funciones del producto para usar el DP numérico de alimentación manual, conserva la cantidad de porciones tras reinicios/redescubrimiento/cambio de IP y sólo expone `Limpiar tolva` cuando el producto declara ese comando. |
+| **0.5.23** | **Mejora en detección dinámica de dimmers**. Corrige el DPS de brillo cuando un dimmer usa el DPS `2` para intensidad y evita modificar por error el límite mínimo de atenuación. |
 | **0.5.0** | **Mejoras en Sincronización Cloud y Flujo de Configuración**. Ahora puedes importar de forma masiva todos tus dispositivos Tuya de una sola vez durante la configuración inicial. Se agregó una nueva opción maestra para "Actualizar Credenciales de la Nube (API Key/Secret)", permitiéndote renovar tu suscripción de Tuya sin tener que reinstalar la integración. También se añadió un botón global "Sincronizar Nube" en la interfaz para descargar nuevos dispositivos y actualizar sus nombres de manera automática sin sobreescribir la configuración local. |
 | **0.4.4** | **Estabilidad de Polling y Timeout LAN**. Se incrementaron los tiempos de espera a 5.0s y reintentos a 3 para dispositivos lentos (chips baratos Tuya) con pings mayores a 300ms. Se forzó `ConnectionError` en caso de respuestas nulas para gatillar reintentos automáticos, evitando que el dispositivo pase falsamente a estado 'no disponible'. |
 | **0.4.3** | **Auto-recuperación de Versión del Protocolo**. El listener de red UDP ahora detecta y actualiza automáticamente la versión de protocolo local (ej. de 3.3 a 3.4/3.5) de tus dispositivos Tuya en caliente. También se corrigió un problema donde los cambios de versión en la base de datos no forzaban la reconstrucción del cliente local de comunicación de tinytuya. |

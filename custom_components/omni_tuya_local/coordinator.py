@@ -271,6 +271,21 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_request_refresh()
         return ok
 
+    async def async_set_manual_feed_portions(self, device_id: str, portions: int) -> None:
+        """Persist the selected manual-feed amount without sending a command.
+
+        The amount is a Home Assistant preference.  It must survive a restart,
+        DHCP address changes, and rediscovery of the same Tuya hardware ID.
+        """
+        config = self.store.get(device_id)
+        if not config:
+            raise ValueError(f"Tuya device {device_id} is not registered")
+        updated = dict(config)
+        updated["manual_feed_portions"] = portions
+        await self.store.add(updated)
+        if device_id in self.devices:
+            self.devices[device_id].update_config(updated)
+
     async def async_fetch_raw_dps(self, device_id: str) -> dict[str, Any]:
         """Obtener DPS en tiempo real para diagnóstico."""
         await self._ensure_devices()

@@ -7,13 +7,14 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
 from .entity import OmniTuyaEntity
+from .pet_feeder import pet_feeder_feed
 
 # ── Perfiles predefinidos por device_type (min, max, step, unit) ──────────────
 _DEVICE_NUMBER_PROFILES: dict[str, list[dict]] = {
     "pet_feeder": [
-        {"dps_id": "4", "name": "Porciones por comida", "min": 1, "max": 20, "step": 1, "unit": ""},
-        {"dps_id": "6", "name": "Número de comidas/día", "min": 1, "max": 6,  "step": 1, "unit": ""},
-        {"dps_id": "virtual_portions", "name": "Porciones a dispensar", "min": 1, "max": 20, "step": 1, "unit": ""},
+        # This is intentionally virtual.  Video feeders use one numeric command
+        # DP to feed, so the amount must be selected before pressing Feed now.
+        {"dps_id": "virtual_portions", "name": "Porciones por comida", "min": 1, "max": 20, "step": 1, "unit": ""},
     ],
     "alarm_kit": [
         {"dps_id": "41", "name": "Volumen de alarma", "min": 0, "max": 10, "step": 1, "unit": ""},
@@ -58,8 +59,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
                         
                         if dps_id == "virtual_portions":
-                            # Solo crear la entidad virtual si el dispositivo tiene DP 201 (comedero de video)
-                            if "201" not in raw_dps:
+                            if not pet_feeder_feed(config, raw_dps):
                                 continue
                             found_id = "virtual_portions"
                         else:
@@ -93,8 +93,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
                         
                         if dps_id == "virtual_portions":
-                            # Solo crear la entidad virtual si el dispositivo tiene DP 201 (comedero de video)
-                            if "201" not in raw_dps:
+                            if not pet_feeder_feed(config, raw_dps):
                                 continue
                             found_id = "virtual_portions"
                         else:
@@ -156,9 +155,8 @@ class OmniTuyaNumber(OmniTuyaEntity, NumberEntity):
     @property
     def native_value(self) -> float | None:
         if self.dps_id == "virtual_portions":
-            if not hasattr(self.coordinator, "manual_feed_portions"):
-                self.coordinator.manual_feed_portions = {}
-            return float(self.coordinator.manual_feed_portions.setdefault(self.device_id, 1))
+            config = self.coordinator.get_device_config(self.device_id) or self.config
+            return float(config.get("manual_feed_portions", 1))
 
         value = self.dps(self.dps_id)
         if value is None:
@@ -170,9 +168,7 @@ class OmniTuyaNumber(OmniTuyaEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         if self.dps_id == "virtual_portions":
-            if not hasattr(self.coordinator, "manual_feed_portions"):
-                self.coordinator.manual_feed_portions = {}
-            self.coordinator.manual_feed_portions[self.device_id] = int(value)
+            await self.coordinator.async_set_manual_feed_portions(self.device_id, int(value))
             self.async_write_ha_state()
             return
 

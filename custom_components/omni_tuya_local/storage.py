@@ -72,9 +72,17 @@ class TuyaDeviceStore:
                 # Merge if exists
                 if dev_id in self._devices:
                     existing = self._devices[dev_id]
-                    # Update name and local_key from cloud
-                    existing["name"] = normalized.get("name") or existing.get("name")
-                    existing["local_key"] = normalized.get("local_key") or existing.get("local_key")
+                    # Cloud data may refresh the local key and product schema,
+                    # but it must never discard local IP/discovery state or the
+                    # user's persisted serving preference.
+                    for key in (
+                        "name", "local_key", "version", "product_name", "product_id",
+                        "category", "category_name", "tuya_functions",
+                        "pet_feeder_feed_dp", "pet_feeder_feed_kind",
+                        "pet_feeder_clean_hopper_dp", "pet_feeder_clean_hopper_value",
+                    ):
+                        if normalized.get(key) not in (None, "", [], {}):
+                            existing[key] = normalized[key]
                     self._devices[dev_id] = existing
                     imported.append(existing)
                 else:

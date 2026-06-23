@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN, HOMEKIT_SWITCH_TYPES
 from .coordinator import OmniTuyaLocalCoordinator
 from .entity import OmniTuyaEntity
+from .pet_feeder import pet_feeder_feed
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -63,7 +64,7 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
-        if self.dps_id in ("3", "201"):
+        if self._is_pet_feeder_feed():
             return self._is_feeding
         value = self.dps(self.dps_id)
         if value is None:
@@ -77,28 +78,23 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         return attrs
 
     async def async_turn_on(self, **kwargs) -> None:
-        if self._homekit_type == "switch" and self.dps_id in ("3", "201"):
-            # Comederos de mascotas suelen requerir un INT (número de porciones) en lugar de True
-            if self.dps_id == "201":
-                if not hasattr(self.coordinator, "manual_feed_portions"):
-                    self.coordinator.manual_feed_portions = {}
-                portions = self.coordinator.manual_feed_portions.get(self.device_id, 1)
-            else:
-                portions = self.dps("4")
-                if portions is None:
-                    portions = 1
-                else:
-                    try:
-                        portions = int(portions)
-                    except ValueError:
-                        portions = 1
+        if self._is_pet_feeder_feed():
+            # Tuya's video-feeder feed_publish/manual_feed DP is write-only and
+            # expects the selected serving count.  Persisted config keeps the
+            # choice across HA restarts, IP changes and rediscovery.
+            config = self.coordinator.get_device_config(self.device_id) or self.config
+            portions = int(config.get("manual_feed_portions", 1))
+            _, kind = pet_feeder_feed(config, self.raw_dps) or (self.dps_id, "value")
             
             # Cambiamos estado local a encendido temporalmente
             self._is_feeding = True
             self.async_write_ha_state()
 
             try:
-                await self.coordinator.async_set_value(self.device_id, int(self.dps_id), portions)
+                if kind == "bool":
+                    await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
+                else:
+                    await self.coordinator.async_set_value(self.device_id, int(self.dps_id), portions)
             finally:
                 # Esperamos 2 segundos y volvemos a apagar para que en HomeKit se vea como pulsador
                 async def auto_reset():
@@ -110,13 +106,18 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
             await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
 
     async def async_turn_off(self, **kwargs) -> None:
-        if not (self._homekit_type == "switch" and self.dps_id in ("3", "201")):
+        if not self._is_pet_feeder_feed():
             await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
+
+    def _is_pet_feeder_feed(self) -> bool:
+        config = self.coordinator.get_device_config(self.device_id) or self.config
+        selected = pet_feeder_feed(config, self.raw_dps)
+        return bool(config.get("device_type") == "pet_feeder" and selected and selected[0] == self.dps_id)
 
 
 _PREDEFINED_SWITCHES: dict[str, list[dict[str, Any]]] = {
     "pet_feeder": [
-        {"dps_id": "3", "alt_dps_ids": ["201"], "name": "Alimentar ahora"},
+        {"name": "Alimentar ahora"},
     ],
     "coffee_maker": [
         {"dps_id": "1", "name": "Preparar café"},
@@ -154,20 +155,11 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
     # 2. DPS predefinidos
     if not channels and device_type in _PREDEFINED_SWITCHES:
         for item in _PREDEFINED_SWITCHES[device_type]:
-            dps_id = item["dps_id"]
             name = item.get("name")
             raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
-            found_id = None
-            if str(dps_id) in raw_dps:
-                found_id = dps_id
-            else:
-                for alt in item.get("alt_dps_ids", []):
-                    if str(alt) in raw_dps:
-                        found_id = alt
-                        break
-            if found_id is None:
-                found_id = dps_id
-            channels.append((str(found_id), name))
+            feed = pet_feeder_feed(config, raw_dps)
+            if feed:
+                channels.append((feed[0], name))
 
     # 3. DPS booleanos del último poll (auto-detectar canales)
     if not channels:
