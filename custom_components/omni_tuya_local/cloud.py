@@ -53,17 +53,17 @@ async def async_fetch_cloud_devices(
         # different DP ids used by Tuya pet feeders.  A failed schema lookup is
         # non-fatal: LAN control and existing mappings continue to work.
         for device in result:
-            device_id = device.get("id")
-            if not device_id or guess_device_type(device) != "pet_feeder":
+            dev_id = device.get("id")
+            if not dev_id or guess_device_type(device) != "pet_feeder":
                 continue
             try:
-                functions = cloud.getfunctions(device_id)
+                functions = cloud.getfunctions(dev_id)
                 if isinstance(functions, dict):
                     functions = functions.get("result", functions.get("functions", []))
                 if isinstance(functions, list):
                     device["_omni_tuya_functions"] = functions
             except Exception as err:
-                _LOGGER.debug("Could not fetch Tuya functions for %s: %s", device_id, err)
+                _LOGGER.debug("Could not fetch Tuya functions for %s: %s", dev_id, err)
         return result
 
     raw_devices = await hass.async_add_executor_job(_sync_fetch)
