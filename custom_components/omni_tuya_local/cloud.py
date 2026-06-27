@@ -31,6 +31,17 @@ async def async_fetch_cloud_devices(
         if isinstance(devices, list):
             result = devices
         elif isinstance(devices, dict):
+            # Detectar error de autenticación / permisos de la API Tuya
+            if not devices.get("success", True):
+                code = devices.get("code", "?")
+                msg = devices.get("msg", "unknown")
+                _LOGGER.error(
+                    "Tuya Cloud API error — code: %s, msg: %s. "
+                    "Verifica: Access ID, Access Secret, región del proyecto "
+                    "y que la cuenta de la app esté vinculada al proyecto IoT.",
+                    code, msg,
+                )
+                raise ValueError(f"Tuya Cloud error {code}: {msg}")
             result = devices.get("result")
             if not isinstance(result, list):
                 _LOGGER.warning("Tuya Cloud returned unexpected payload: %s", devices)

@@ -86,8 +86,11 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_API_SECRET: store.cloud_config[CONF_API_SECRET],
                             }
                             return await self.async_step_choose_cloud_device()
-                    except Exception:
-                        pass # Fallback a pedir credenciales
+                    except Exception as _err:  # noqa: BLE001
+                        import logging
+                        logging.getLogger(__name__).debug(
+                            "Stored cloud credentials failed: %s — asking for new credentials", _err
+                        )
 
                 return await self.async_step_cloud_credentials()
             if mode == "manual_device":
@@ -136,12 +139,20 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "",
                 )
                 self._cloud_devices = [d for d in devices if d.get(CONF_LOCAL_KEY)]
-                if not self._cloud_devices:
+                if not devices:
+                    # La llamada retornó vacío: error de autenticación o red
+                    errors["base"] = "cloud_error"
+                elif not self._cloud_devices:
+                    # Autenticación exitosa pero ningún dispositivo tiene local_key
                     errors["base"] = "no_devices"
                 else:
                     self._device_data = user_input
                     return await self.async_step_choose_cloud_device()
-            except Exception:
+            except Exception as err:
+                import logging
+                logging.getLogger(__name__).error(
+                    "Tuya Cloud credentials error: %s", err
+                )
                 errors["base"] = "cloud_error"
 
         current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
