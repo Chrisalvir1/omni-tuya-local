@@ -1,6 +1,6 @@
 DOMAIN = "omni_tuya_local"
-INTEGRATION_VERSION = "0.5.25"
-BUILD_NUMBER = "20260627.01"
+INTEGRATION_VERSION = "0.5.27"
+BUILD_NUMBER = "20260702.01"
 
 CONF_REGION = "region"
 CONF_API_KEY = "api_key"
@@ -167,6 +167,7 @@ TUYA_CATEGORY_TO_DOMAIN: dict[str, str] = {
     "sd": "vacuum",
     # Alarma
     "ywj": "alarm_control_panel", "hjj": "alarm_control_panel",
+    "mal": "alarm_control_panel",  # alarma solar de camino (solar driveway alarm)
     # Humidificador
     "jsq": "humidifier",
     # Número (setpoint, temporizador)

@@ -20,6 +20,9 @@ from .storage import TuyaDeviceStore
 
 _LOGGER = logging.getLogger(__name__)
 
+# Interval de poll reducido para alarm_kit — captura el trigger PIR efímero (DPS 106)
+_ALARM_KIT_POLL_INTERVAL = 5  # segundos
+
 
 class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, store: TuyaDeviceStore) -> None:
@@ -82,20 +85,34 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     def _adjust_poll_interval(self) -> None:
-        """Reducir frecuencia de poll si todos los dispositivos están unavailable."""
+        """Reducir frecuencia de poll si todos los dispositivos están unavailable.
+
+        Si hay al menos un alarm_kit configurado y disponible, se usa un intervalo
+        reducido (5 s) para capturar el trigger PIR efímero del sensor solar (DPS 106).
+        """
         if not self.devices:
             return
         all_failed = all(
             d.consecutive_failures >= MAX_POLL_FAILURES
             for d in self.devices.values()
         )
-        target_seconds = BACKOFF_POLL_INTERVAL if all_failed else DEFAULT_POLL_INTERVAL
+        # Detectar si hay algún alarm_kit activo
+        has_alarm_kit = any(
+            cfg.get("device_type") == "alarm_kit" and cfg.get("enabled", True)
+            for cfg in self.store.all().values()
+        )
+        if all_failed:
+            target_seconds = BACKOFF_POLL_INTERVAL
+        elif has_alarm_kit:
+            target_seconds = _ALARM_KIT_POLL_INTERVAL
+        else:
+            target_seconds = DEFAULT_POLL_INTERVAL
         desired = timedelta(seconds=target_seconds)
         if self.update_interval != desired:
             self.update_interval = desired
             _LOGGER.debug(
-                "Poll interval adjusted to %ss (all_failed=%s)",
-                target_seconds, all_failed,
+                "Poll interval adjusted to %ss (all_failed=%s, has_alarm_kit=%s)",
+                target_seconds, all_failed, has_alarm_kit,
             )
 
     async def _ensure_devices(self) -> None:

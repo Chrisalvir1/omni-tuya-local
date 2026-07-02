@@ -198,7 +198,7 @@ def guess_device_type(data: dict[str, Any]) -> str:
         "pm25": "pm25_sensor",
         "co2bj": "co2_sensor",
         "jsq": "humidifier",
-        "ywj": "alarm_kit", "hjj": "alarm_kit",
+        "ywj": "alarm_kit", "hjj": "alarm_kit", "mal": "alarm_kit",  # solar driveway alarm
         "sfkzq": "pet_feeder",    # dispensador de alimento
         "cwwsq": "pet_feeder",    # comedero inteligente
         "cwysj": "water_fountain", # dispensador agua
