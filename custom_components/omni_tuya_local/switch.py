@@ -125,7 +125,6 @@ _PREDEFINED_SWITCHES: dict[str, list[dict[str, Any]]] = {
     "kettle": [
         {"dps_id": "1", "name": "Hervir"},
     ],
-    "alarm_kit": [],  # Las zonas 109-112 son read-only → expuestas como binary_sensor
 }
 
 def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tuple[str, str | None]]:
