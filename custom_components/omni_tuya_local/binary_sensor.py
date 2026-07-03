@@ -160,6 +160,7 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
         self._sensor_name = sensor_name
         self._attr_device_class = device_class
         self._attr_unique_id = f"{DOMAIN}_{config['device_id']}_bs_{unique_suffix}"
+        self._last_trigger_time: float = 0.0
 
     @property
     def name(self) -> str:
@@ -173,9 +174,23 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
         
         # El PIR solar (DPS 101) dispara con "false"
         if self.dps_id == "101":
+            import time
+            is_triggered = False
             if isinstance(value, bool):
-                return not value
-            return str(value).lower() in {"0", "false", "off", "closed"}
+                is_triggered = not value
+            else:
+                is_triggered = str(value).lower() in {"0", "false", "off", "closed"}
+                
+            if is_triggered:
+                self._last_trigger_time = time.time()
+                return True
+                
+            # Retardo artificial (latch) de 5 segundos para que la UI de HA 
+            # muestre el estado "Detectado" de un evento que dura solo 0.6s
+            if time.time() - self._last_trigger_time < 5.0:
+                return True
+                
+            return False
 
         if isinstance(value, bool):
             return value
