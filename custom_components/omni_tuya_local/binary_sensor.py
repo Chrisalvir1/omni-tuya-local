@@ -185,9 +185,9 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
                 self._last_trigger_time = time.time()
                 return True
                 
-            # Retardo artificial (latch) de 5 segundos para que la UI de HA 
+            # Retardo artificial (latch) de 1 segundo para que la UI de HA 
             # muestre el estado "Detectado" de un evento que dura solo 0.6s
-            if time.time() - self._last_trigger_time < 5.0:
+            if time.time() - self._last_trigger_time < 1.0:
                 return True
                 
             return False
