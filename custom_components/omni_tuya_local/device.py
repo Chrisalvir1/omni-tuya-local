@@ -17,15 +17,25 @@ _MAX_STATUS_RETRIES = 1
 
 
 class OmniTuyaDevice:
-    def __init__(self, hass: HomeAssistant, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config: dict[str, Any],
+        on_push: Any | None = None
+    ) -> None:
         self.hass = hass
         self.config = TuyaDeviceConfig.from_dict(config)
         self.device_id = self.config.device_id
+        self._on_push = on_push
         self._tuya = None
         self._available = False
         self._last_dps: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._consecutive_failures: int = 0
+        
+        self._listening = False
+        if self.config.device_type == "alarm_kit":
+            self._start_push_listener()
 
     @property
     def available(self) -> bool:
@@ -293,9 +303,65 @@ class OmniTuyaDevice:
 
     def close(self) -> None:
         """Cerrar la conexión socket persistentemente abierta."""
+        self._listening = False
         if self._tuya:
             try:
                 self._tuya.close()
             except Exception:
                 pass
             self._tuya = None
+
+    def _start_push_listener(self) -> None:
+        if not self._listening:
+            self._listening = True
+            import threading
+            threading.Thread(
+                target=self._push_listener_loop,
+                daemon=True,
+                name=f"TuyaPush_{self.device_id}"
+            ).start()
+            _LOGGER.info("Started Tuya TCP Push Listener for %s", self.device_id)
+
+    def _push_listener_loop(self) -> None:
+        """Hilo dedicado (daemon) para escuchar eventos push TCP en tiempo real."""
+        import time
+        while self._listening:
+            if not self.config.has_host:
+                time.sleep(2)
+                continue
+
+            try:
+                # _get_or_build_tuya will create the device if None
+                dev = self._get_or_build_tuya()
+                dev.set_socketPersistent(True)
+                dev.set_socketTimeout(5.0)
+
+                # Enviar status inicial para forzar la apertura del socket
+                try:
+                    dev.status()
+                except Exception:
+                    pass
+
+                while self._listening:
+                    try:
+                        data = dev.receive()
+                        if data and isinstance(data, dict) and "dps" in data:
+                            dps = data["dps"]
+                            self._last_dps.update(dps)
+                            self._available = True
+                            self._consecutive_failures = 0
+                            
+                            _LOGGER.debug("TCP Push received from %s: %s", self.device_id, dps)
+                            
+                            if self._on_push:
+                                self.hass.loop.call_soon_threadsafe(
+                                    self._on_push, self.device_id, dps
+                                )
+                    except Exception as err:
+                        if self._listening:
+                            _LOGGER.debug("Push listener error for %s: %s", self.device_id, err)
+                            self._invalidate_client()
+                            break  # Reconstruir socket
+            except Exception as err:
+                _LOGGER.debug("Push listener connect error for %s: %s", self.device_id, err)
+                time.sleep(5)

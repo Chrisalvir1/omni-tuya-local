@@ -56,12 +56,12 @@ _CATEGORY_TO_CLASS: dict[str, BinarySensorDeviceClass] = {
 
 # ── Entidades predefinidas para alarm_kit (alarma solar multizona) ────────────
 # Cada tupla: (dps_id, nombre, device_class, unique_suffix)
-# DPS 106 = trigger PIR solar (movimiento detectado — push efímero)
+# DPS 101 = trigger PIR solar (movimiento detectado — push efímero, false=detectado)
 # DPS 102 = zona activa del selector físico en el sensor
 # DPS 109-112 = zonas 1-4 habilitadas (read-only, refleja switch físico en base)
 # DPS 119 = tamper / antisabotaje
 _ALARM_KIT_SENSORS: list[tuple[str, str, BinarySensorDeviceClass, str]] = [
-    ("106", "Sensor Solar",  BinarySensorDeviceClass.MOTION,  "pir"),
+    ("101", "Sensor Solar",  BinarySensorDeviceClass.MOTION,  "pir"),
     ("102", "Zona Activa",   BinarySensorDeviceClass.SAFETY,  "zone_active"),
     ("109", "Zona 1",        BinarySensorDeviceClass.SAFETY,  "zone1"),
     ("110", "Zona 2",        BinarySensorDeviceClass.SAFETY,  "zone2"),
@@ -170,6 +170,13 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
         value = self.dps(self.dps_id)
         if value is None:
             return None
+        
+        # El PIR solar (DPS 101) dispara con "false"
+        if self.dps_id == "101":
+            if isinstance(value, bool):
+                return not value
+            return str(value).lower() in {"0", "false", "off", "closed"}
+
         if isinstance(value, bool):
             return value
         return str(value).lower() in {"1", "true", "on", "open", "motion",

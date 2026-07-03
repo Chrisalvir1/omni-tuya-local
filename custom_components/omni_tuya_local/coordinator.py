@@ -123,7 +123,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.devices.pop(device_id, None)
                 continue
             if device_id not in self.devices:
-                self.devices[device_id] = OmniTuyaDevice(self.hass, config)
+                self.devices[device_id] = OmniTuyaDevice(
+                    self.hass, config, on_push=self._handle_push_update
+                )
             else:
                 # Actualizar config si cambió (p.ej. nueva IP)
                 self.devices[device_id].update_config(config)
@@ -138,7 +140,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if dev_id in self.devices:
             self.devices[dev_id].update_config(stored)
         else:
-            self.devices[dev_id] = OmniTuyaDevice(self.hass, stored)
+            self.devices[dev_id] = OmniTuyaDevice(
+                self.hass, stored, on_push=self._handle_push_update
+            )
         await self.async_request_refresh()
         self._notify_entity_refresh()
         return stored
@@ -150,7 +154,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if dev_id in self.devices:
                 self.devices[dev_id].update_config(config)
             else:
-                self.devices[dev_id] = OmniTuyaDevice(self.hass, config)
+                self.devices[dev_id] = OmniTuyaDevice(
+                    self.hass, config, on_push=self._handle_push_update
+                )
         await self.async_request_refresh()
         self._notify_entity_refresh()
         return stored
@@ -178,7 +184,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Agregar los nuevos
         for dev_id, config in configured.items():
             if dev_id not in self.devices and config.get("enabled", True):
-                self.devices[dev_id] = OmniTuyaDevice(self.hass, config)
+                self.devices[dev_id] = OmniTuyaDevice(
+                    self.hass, config, on_push=self._handle_push_update
+                )
         await self.async_request_refresh()
         self._notify_entity_refresh()
 
@@ -248,6 +256,21 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _notify_entity_refresh(self) -> None:
         for cb in list(self._entity_refresh_callbacks):
             self.hass.async_create_task(cb())
+
+    @callback
+    def _handle_push_update(self, device_id: str, dps: dict[str, Any]) -> None:
+        """Callback ejecutado desde el event loop cuando el listener TCP recibe un push."""
+        if not self.data:
+            self.data = {"devices": self.store.all(), "dps": {}, "available": {}}
+        
+        if device_id not in self.data["dps"]:
+            self.data["dps"][device_id] = {}
+            
+        self.data["dps"][device_id].update(dps)
+        self.data["available"][device_id] = True
+        
+        _LOGGER.debug("Coordinator updated state for %s from push: %s", device_id, dps)
+        self.async_set_updated_data(self.data)
 
     def get_device_config(self, device_id: str) -> dict[str, Any] | None:
         return self.store.get(device_id)
