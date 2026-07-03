@@ -78,7 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async def add_new_entities() -> None:
         entities = []
         for config in coordinator.store.all().values():
-            if config.get("domain") != "binary_sensor":
+            device_domain = config.get("domain")
+            device_type = config.get("device_type") or ""
+
+            # Permitir crear binary_sensors si el dominio principal es binary_sensor O si es un alarm_kit
+            if device_domain != "binary_sensor" and device_type != "alarm_kit":
                 continue
 
             device_type = config.get("device_type") or ""
