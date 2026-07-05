@@ -62,6 +62,7 @@ _CATEGORY_TO_CLASS: dict[str, BinarySensorDeviceClass] = {
 # DPS 119 = tamper / antisabotaje
 _ALARM_KIT_SENSORS: list[tuple[str, str, BinarySensorDeviceClass, str]] = [
     ("101", "Sensor Solar",  BinarySensorDeviceClass.MOTION,  "pir"),
+    ("106", "Sensor Solar (106)", BinarySensorDeviceClass.MOTION, "pir_106"),
     ("102", "Zona Activa",   BinarySensorDeviceClass.SAFETY,  "zone_active"),
     ("109", "Zona 1",        BinarySensorDeviceClass.SAFETY,  "zone1"),
     ("110", "Zona 2",        BinarySensorDeviceClass.SAFETY,  "zone2"),
@@ -169,9 +170,9 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if self.dps_id == "101":
-            value = self.dps("101")
-            push_time = self.dps("_push_time")
+        if self.dps_id in ("101", "106"):
+            value = self.dps(self.dps_id)
+            push_time = self.dps(f"_push_time_{self.dps_id}")
             
             if value is not None and push_time is not None and push_time > self._last_trigger_time:
                 is_triggered = False
@@ -189,7 +190,7 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        if self.dps_id == "101":
+        if self.dps_id in ("101", "106"):
             import time
             # Latch de 3.5 segundos para la UI y automations (HomeKit)
             if time.time() - self._last_trigger_time < 3.5:

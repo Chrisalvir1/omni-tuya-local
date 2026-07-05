@@ -267,8 +267,11 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data["dps"][device_id] = {}
             
         import time
+        t = time.time()
         dps_copy = dict(dps)
-        dps_copy["_push_time"] = time.time()
+        dps_copy["_push_time"] = t
+        for k in dps.keys():
+            dps_copy[f"_push_time_{k}"] = t
         
         self.data["dps"][device_id].update(dps_copy)
         self.data["available"][device_id] = True
