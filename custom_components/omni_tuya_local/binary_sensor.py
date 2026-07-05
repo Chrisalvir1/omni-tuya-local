@@ -5,7 +5,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
@@ -166,32 +166,39 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
     def name(self) -> str:
         return self._sensor_name
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.dps_id == "101":
+            value = self.dps("101")
+            push_time = self.dps("_push_time")
+            
+            if value is not None and push_time is not None and push_time > self._last_trigger_time:
+                is_triggered = False
+                if isinstance(value, bool):
+                    is_triggered = not value
+                else:
+                    is_triggered = str(value).lower() in {"0", "false", "off", "closed"}
+                    
+                if is_triggered:
+                    self._last_trigger_time = push_time
+                    # Auto-reset el estado después de 3.5 segundos para HomeKit
+                    self.hass.loop.call_later(3.5, self.async_write_ha_state)
+                    
+        super()._handle_coordinator_update()
+
     @property
     def is_on(self) -> bool | None:
+        if self.dps_id == "101":
+            import time
+            # Latch de 3.5 segundos para la UI y automations (HomeKit)
+            if time.time() - self._last_trigger_time < 3.5:
+                return True
+            return False
+
         value = self.dps(self.dps_id)
         if value is None:
             return None
-        
-        # El PIR solar (DPS 101) dispara con "false"
-        if self.dps_id == "101":
-            import time
-            is_triggered = False
-            if isinstance(value, bool):
-                is_triggered = not value
-            else:
-                is_triggered = str(value).lower() in {"0", "false", "off", "closed"}
-                
-            if is_triggered:
-                self._last_trigger_time = time.time()
-                return True
-                
-            # Retardo artificial (latch) de 1 segundo para que la UI de HA 
-            # muestre el estado "Detectado" de un evento que dura solo 0.6s
-            if time.time() - self._last_trigger_time < 1.0:
-                return True
-                
-            return False
-
         if isinstance(value, bool):
             return value
         return str(value).lower() in {"1", "true", "on", "open", "motion",

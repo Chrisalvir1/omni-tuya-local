@@ -266,10 +266,14 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if device_id not in self.data["dps"]:
             self.data["dps"][device_id] = {}
             
-        self.data["dps"][device_id].update(dps)
+        import time
+        dps_copy = dict(dps)
+        dps_copy["_push_time"] = time.time()
+        
+        self.data["dps"][device_id].update(dps_copy)
         self.data["available"][device_id] = True
         
-        _LOGGER.debug("Coordinator updated state for %s from push: %s", device_id, dps)
+        _LOGGER.debug("Coordinator updated state for %s from push: %s", device_id, dps_copy)
         self.async_set_updated_data(self.data)
 
     def get_device_config(self, device_id: str) -> dict[str, Any] | None:
