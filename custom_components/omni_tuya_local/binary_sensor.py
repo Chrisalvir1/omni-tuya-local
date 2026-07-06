@@ -175,11 +175,10 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
             push_time = self.dps(f"_push_time_{self.dps_id}")
             
             if value is not None and push_time is not None and push_time > self._last_trigger_time:
-                is_triggered = False
-                if isinstance(value, bool):
-                    is_triggered = not value
-                else:
-                    is_triggered = str(value).lower() in {"0", "false", "off", "closed"}
+                # Al ser un evento efímero (o incluso si tiene un reset posterior rápido),
+                # cualquier señal push recibida en 101/106 significa que el sensor se activó.
+                # Esto ignora si el fabricante manda True o False.
+                is_triggered = True
                     
                 if is_triggered:
                     self._last_trigger_time = push_time
