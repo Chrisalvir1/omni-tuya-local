@@ -110,20 +110,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if (
         store.cloud_config.get(CONF_API_KEY)
         and store.cloud_config.get(CONF_API_SECRET)
-        and not store.all()
     ):
-        try:
-            devices = await async_fetch_cloud_devices(
-                hass,
-                store.cloud_config[CONF_API_KEY],
-                store.cloud_config[CONF_API_SECRET],
-                store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
-                store.cloud_config.get(CONF_DEVICE_ID, ""),
-            )
-            await store.add_many(devices)
-            _LOGGER.info("Imported %s Tuya devices during setup", len(devices))
-        except Exception as err:
-            _LOGGER.warning("Tuya cloud sync during setup failed: %s", err)
+        if not store.all():
+            try:
+                devices = await async_fetch_cloud_devices(
+                    hass,
+                    store.cloud_config[CONF_API_KEY],
+                    store.cloud_config[CONF_API_SECRET],
+                    store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
+                    store.cloud_config.get(CONF_DEVICE_ID, ""),
+                )
+                await store.add_many(devices)
+                _LOGGER.info("Imported %s Tuya devices during setup", len(devices))
+            except Exception as err:
+                _LOGGER.warning("Tuya cloud sync during setup failed: %s", err)
+        else:
+            hass.data.setdefault(DOMAIN, {})
+            if not hass.data[DOMAIN].get("_cloud_sync_scheduled"):
+                hass.data[DOMAIN]["_cloud_sync_scheduled"] = True
+
+                async def _background_sync() -> None:
+                    import asyncio
+                    await asyncio.sleep(5)
+                    try:
+                        await hass.services.async_call(DOMAIN, SERVICE_SYNC_CLOUD, {})
+                    except Exception as err:
+                        _LOGGER.debug("Background cloud sync failed: %s", err)
+
+                hass.async_create_task(_background_sync())
 
     coordinator = OmniTuyaLocalCoordinator(hass, entry, active_store)
     await coordinator.async_setup()
