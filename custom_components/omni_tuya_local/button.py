@@ -140,8 +140,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator.register_entity_refresh_callback(add_new_entities)
     await add_new_entities()
 
-    # Agregar el botón global de sincronización
-    async_add_entities([OmniTuyaSyncCloudButton(coordinator, entry.entry_id)])
+    # Agregar el botón global de sincronización solo a la primera entrada
+    first_entry = hass.config_entries.async_entries(DOMAIN)[0]
+    if entry.entry_id == first_entry.entry_id:
+        async_add_entities([OmniTuyaSyncCloudButton(coordinator, entry.entry_id)])
 
 
 class OmniTuyaSyncCloudButton(ButtonEntity):
@@ -153,7 +155,7 @@ class OmniTuyaSyncCloudButton(ButtonEntity):
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, entry_id: str) -> None:
         self.coordinator = coordinator
         self.entry_id = entry_id
-        self._attr_unique_id = f"{DOMAIN}_{entry_id}_sync_cloud"
+        self._attr_unique_id = f"{DOMAIN}_global_sync_cloud"
         self._attr_name = "Sincronizar Nube"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, "hub")},
@@ -164,7 +166,10 @@ class OmniTuyaSyncCloudButton(ButtonEntity):
 
     async def async_press(self) -> None:
         """Activar la sincronización con la nube."""
-        await self.coordinator.hass.services.async_call(DOMAIN, "sync_cloud", {})
+        # Se ejecuta como tarea de fondo para evitar que la UI haga timeout (cuadro en blanco)
+        self.coordinator.hass.async_create_task(
+            self.coordinator.hass.services.async_call(DOMAIN, "sync_cloud", {})
+        )
 
 
 class OmniTuyaButton(OmniTuyaEntity, ButtonEntity):

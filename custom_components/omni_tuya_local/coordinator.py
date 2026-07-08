@@ -173,10 +173,22 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Actualizar configs de devices existentes antes de limpiar
         await self.store.async_load()
         configured = self.store.all()
+        from homeassistant.helpers import device_registry as dr
+        device_registry = dr.async_get(self.hass)
+
         # Actualizar los existentes primero
         for dev_id, config in configured.items():
             if dev_id in self.devices:
                 self.devices[dev_id].update_config(config)
+            
+            # Sincronizar el nombre con el Device Registry de HA
+            new_name = config.get("name")
+            if new_name:
+                device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
+                # Solo forzamos la actualización si el nombre original configurado (no el renombrado localmente por el usuario en HA) cambió
+                if device and device.original_name != new_name:
+                    device_registry.async_update_device(device.id, original_name=new_name)
+
         # Eliminar los que ya no existen
         for dev_id in list(self.devices):
             if dev_id not in configured:
