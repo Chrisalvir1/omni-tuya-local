@@ -385,7 +385,10 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
     # Refreshing the cloud is only for metadata (new devices, names and local
     # keys).  Device control remains fully local.  One timer for the whole
     # integration avoids API bursts caused by having one config entry/device.
-    if "_cloud_sync_unsub" not in hass.data[DOMAIN]:
+    if (
+        DEFAULT_CLOUD_SYNC_INTERVAL > 0
+        and "_cloud_sync_unsub" not in hass.data[DOMAIN]
+    ):
         async def _periodic_cloud_sync(_now) -> None:
             store = TuyaDeviceStore(hass)
             await store.async_load()

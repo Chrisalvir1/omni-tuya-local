@@ -14,6 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 # longer than that (and include TinyTuya's socket retry) or HA cancels healthy,
 # but slow, Wi-Fi devices before the LAN request can finish.
 _TUYA_TIMEOUT = 8
+_COMMAND_TIMEOUT = 4
 _MAX_STATUS_ATTEMPTS = 2
 # A single lost Wi-Fi packet must not flip every entity to unavailable.
 _UNAVAILABLE_AFTER_FAILURES = 3
@@ -34,6 +35,7 @@ class OmniTuyaDevice:
         self._available = False
         self._last_dps: dict[str, Any] = {}
         self._lock = asyncio.Lock()
+        self._command_lock = asyncio.Lock()
         self._consecutive_failures: int = 0
         self._last_error_detail: str = ""
         self._runtime_version: str | None = None
@@ -176,17 +178,25 @@ class OmniTuyaDevice:
             )
 
 
-    def _sync_set_status(self, value: bool, dps_id: int) -> None:
-        device = self._get_or_build_tuya()
-        device.set_status(value, dps_id)
+    @staticmethod
+    def _command_accepted(response: Any) -> bool:
+        """TinyTuya returns errors as dicts instead of always raising."""
+        return not (
+            isinstance(response, dict)
+            and ("Error" in response or response.get("Err"))
+        )
 
-    def _sync_set_value(self, dps_id: int, value: Any) -> None:
-        device = self._get_or_build_tuya()
-        device.set_value(dps_id, value)
+    def _sync_set_status(self, value: bool, dps_id: int) -> Any:
+        # A fresh, non-persistent client keeps a queued status poll from
+        # delaying user control. ``nowait`` still performs the local TCP send;
+        # state is verified by the background poll afterwards.
+        return self._build_tuya().set_status(value, dps_id, nowait=True)
 
-    def _sync_set_values(self, dps_dict: dict[str, Any]) -> None:
-        device = self._get_or_build_tuya()
-        device.set_multiple_values(dps_dict)
+    def _sync_set_value(self, dps_id: int, value: Any) -> Any:
+        return self._build_tuya().set_value(dps_id, value, nowait=True)
+
+    def _sync_set_values(self, dps_dict: dict[str, Any]) -> Any:
+        return self._build_tuya().set_multiple_values(dps_dict, nowait=True)
 
     def _sync_probe_protocol_versions(self) -> tuple[str, dict[str, Any]] | None:
         """Try alternative Tuya LAN protocol versions once after error 914."""
@@ -271,17 +281,19 @@ class OmniTuyaDevice:
 
     async def async_set_status(self, value: bool, dps_id: int = 1) -> bool:
         """Enviar comando on/off al dispositivo."""
-        async with self._lock:
+        async with self._command_lock:
             if not self.config.has_host:
                 _LOGGER.error("Device %s has no IP — cannot send command", self.device_id)
                 return False
             try:
-                await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     self.hass.async_add_executor_job(
                         lambda: self._sync_set_status(value, dps_id)
                     ),
-                    timeout=_TUYA_TIMEOUT,
+                    timeout=_COMMAND_TIMEOUT,
                 )
+                if not self._command_accepted(response):
+                    raise ConnectionError(f"Tuya rejected set_status: {response}")
                 self._last_dps[str(dps_id)] = value
                 self._mark_online()
                 return True
@@ -302,17 +314,19 @@ class OmniTuyaDevice:
 
     async def async_set_value(self, dps_id: int, value: Any) -> bool:
         """Enviar un valor arbitrario a un DPS."""
-        async with self._lock:
+        async with self._command_lock:
             if not self.config.has_host:
                 _LOGGER.error("Device %s has no IP — cannot send value", self.device_id)
                 return False
             try:
-                await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     self.hass.async_add_executor_job(
                         lambda: self._sync_set_value(dps_id, value)
                     ),
-                    timeout=_TUYA_TIMEOUT,
+                    timeout=_COMMAND_TIMEOUT,
                 )
+                if not self._command_accepted(response):
+                    raise ConnectionError(f"Tuya rejected set_value: {response}")
                 self._last_dps[str(dps_id)] = value
                 self._mark_online()
                 return True
@@ -335,18 +349,20 @@ class OmniTuyaDevice:
         """Enviar múltiples valores DPS al dispositivo en un solo payload."""
         if not dps_dict:
             return True
-        async with self._lock:
+        async with self._command_lock:
             if not self.config.has_host:
                 _LOGGER.error("Device %s has no IP — cannot send values", self.device_id)
                 return False
             try:
                 stringified_dict = {str(k): v for k, v in dps_dict.items()}
-                await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     self.hass.async_add_executor_job(
                         lambda: self._sync_set_values(stringified_dict)
                     ),
-                    timeout=_TUYA_TIMEOUT,
+                    timeout=_COMMAND_TIMEOUT,
                 )
+                if not self._command_accepted(response):
+                    raise ConnectionError(f"Tuya rejected multiple values: {response}")
                 for dps_id, value in stringified_dict.items():
                     self._last_dps[dps_id] = value
                 self._mark_online()

@@ -41,6 +41,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._recovery_scan_task: asyncio.Task | None = None
         self._lan_refresh_lock = asyncio.Lock()
         self._periodic_discovery_unsub = None
+        self._verification_tasks: dict[str, asyncio.Task] = {}
         super().__init__(
             hass,
             _LOGGER,
@@ -410,14 +411,37 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def is_available(self, device_id: str) -> bool:
         return bool((self.data or {}).get("available", {}).get(device_id))
 
+    def _publish_optimistic_state(self, device_id: str, dps: dict[str, Any]) -> None:
+        """Publish a local command immediately; polling confirms it later."""
+        data = self.data or {"devices": self.store.all(), "dps": {}, "available": {}}
+        data.setdefault("dps", {}).setdefault(device_id, {}).update(dps)
+        data.setdefault("available", {})[device_id] = True
+        self.async_set_updated_data(data)
+
+    def _schedule_command_verification(self, device_id: str) -> None:
+        """Verify after control without keeping the service call waiting."""
+        active = self._verification_tasks.get(device_id)
+        if active and not active.done():
+            return
+
+        async def _verify() -> None:
+            await asyncio.sleep(2)
+            try:
+                await self.async_request_refresh()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Background command verification failed for %s: %s", device_id, err)
+
+        self._verification_tasks[device_id] = self.hass.async_create_task(_verify())
+
     async def async_set_status(self, device_id: str, value: bool, dps_id: int = 1) -> bool:
         await self._ensure_devices()
         device = self.devices.get(device_id)
         if not device:
             return False
         ok = await device.async_set_status(value, dps_id)
-        await asyncio.sleep(0)
-        await self.async_request_refresh()
+        if ok:
+            self._publish_optimistic_state(device_id, {str(dps_id): value})
+            self._schedule_command_verification(device_id)
         return ok
 
     async def async_set_value(self, device_id: str, dps_id: int, value: Any) -> bool:
@@ -426,8 +450,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not device:
             return False
         ok = await device.async_set_value(dps_id, value)
-        await asyncio.sleep(0)
-        await self.async_request_refresh()
+        if ok:
+            self._publish_optimistic_state(device_id, {str(dps_id): value})
+            self._schedule_command_verification(device_id)
         return ok
 
     async def async_set_values(self, device_id: str, dps_dict: dict[str, Any]) -> bool:
@@ -436,8 +461,11 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not device:
             return False
         ok = await device.async_set_values(dps_dict)
-        await asyncio.sleep(0)
-        await self.async_request_refresh()
+        if ok:
+            self._publish_optimistic_state(
+                device_id, {str(dps_id): value for dps_id, value in dps_dict.items()}
+            )
+            self._schedule_command_verification(device_id)
         return ok
 
     async def async_set_manual_feed_portions(self, device_id: str, portions: int) -> None:

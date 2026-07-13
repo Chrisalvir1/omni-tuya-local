@@ -1,6 +1,6 @@
 DOMAIN = "omni_tuya_local"
-INTEGRATION_VERSION = "0.5.51"
-BUILD_NUMBER = "20260713.13"
+INTEGRATION_VERSION = "0.5.52"
+BUILD_NUMBER = "20260713.14"
 
 CONF_REGION = "region"
 CONF_API_KEY = "api_key"
@@ -21,7 +21,9 @@ DEFAULT_REGION = "us"
 DEFAULT_VERSION = "3.3"
 DEFAULT_POLL_INTERVAL = 30          # segundos — 15s era muy agresivo
 DEFAULT_DISCOVERY_INTERVAL = 300    # segundos — escaneo periódico LAN
-DEFAULT_CLOUD_SYNC_INTERVAL = 21600 # 6 h — metadata/nuevos dispositivos, no control LAN
+# Cloud is opt-in/manual. Device control and availability must never depend on
+# a remote API round trip.
+DEFAULT_CLOUD_SYNC_INTERVAL = 0
 MAX_POLL_FAILURES = 5               # fallos antes de reducir frecuencia de poll
 BACKOFF_POLL_INTERVAL = 120         # poll cada 2 min cuando el device falla
 
