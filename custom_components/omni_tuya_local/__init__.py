@@ -427,6 +427,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
                 "product_name": config.get("product_name"),
                 "available": coord.is_available(dev_id),
                 "consecutive_failures": device.consecutive_failures if device else 0,
+                "last_error": device.last_error_detail if device else "",
                 "last_dps": coord.dps_value(dev_id) if coord.data else None,
                 "dps_count": len((coord.data or {}).get("dps", {}).get(dev_id, {})),
             })

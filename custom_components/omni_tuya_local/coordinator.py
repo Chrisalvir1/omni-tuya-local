@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -34,6 +35,8 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entity_refresh_callbacks: list[Any] = []
         self._registered_callback_ids: set[int] = set()
         self._udp_transports: list[Any] = []
+        self._last_recovery_scan: float = 0.0
+        self._recovery_scan_task: asyncio.Task | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -72,6 +75,17 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # lets entities remain visible after a restart even if a device is
             # temporarily offline, while avoiding unsafe guessed controls.
             config = self.store.get(device_id)
+            detected_version = device.detected_protocol_version
+            if (
+                config
+                and detected_version
+                and str(config.get("version")) != detected_version
+            ):
+                updated = dict(config)
+                updated["version"] = detected_version
+                await self.store.add(updated)
+                device.update_config(updated)
+                config = updated
             if config and dps_by_device[device_id]:
                 schema = schema_from_dps(config, dps_by_device[device_id])
                 if schema != config.get("discovered_dps", {}):
@@ -92,6 +106,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Ajustar update_interval dinámicamente según estado general de dispositivos
         self._adjust_poll_interval()
+        self._schedule_lan_recovery_if_needed()
 
         if dps_schema_changed:
             self._notify_entity_refresh()
@@ -101,6 +116,47 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "dps": dps_by_device,
             "available": availability,
         }
+
+    def _schedule_lan_recovery_if_needed(self) -> None:
+        """Rescan LAN only after persistent failures, never every poll."""
+        if not any(
+            device.consecutive_failures >= MAX_POLL_FAILURES
+            for device in self.devices.values()
+        ):
+            return
+        now = time.monotonic()
+        if (
+            self._recovery_scan_task is not None
+            and not self._recovery_scan_task.done()
+        ) or now - self._last_recovery_scan < BACKOFF_POLL_INTERVAL:
+            return
+        self._last_recovery_scan = now
+        self._recovery_scan_task = self.hass.async_create_task(
+            self._async_recover_lan_addresses()
+        )
+
+    async def _async_recover_lan_addresses(self) -> None:
+        """Use Tuya broadcasts/scanning to repair a changed DHCP address."""
+        from .discovery import async_scan_network
+
+        _LOGGER.info("Persistent Tuya LAN failures detected; rescanning device addresses")
+        try:
+            found = await async_scan_network(self.hass, list(self.store.all().values()))
+            changed = 0
+            for config in found:
+                if config.get("synced") and config.get("device_id"):
+                    previous = self.store.get(config["device_id"])
+                    if previous and (
+                        previous.get("host") != config.get("host")
+                        or previous.get("ip") != config.get("ip")
+                    ):
+                        await self.store.add(config)
+                        changed += 1
+            if changed:
+                _LOGGER.info("Recovered %d Tuya LAN address(es) after rescan", changed)
+                await self.async_reload_devices()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Automatic Tuya LAN recovery scan failed: %s", err)
 
     def _adjust_poll_interval(self) -> None:
         """Reducir frecuencia de poll si todos los dispositivos están unavailable.

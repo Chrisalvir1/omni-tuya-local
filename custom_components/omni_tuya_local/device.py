@@ -10,10 +10,13 @@ from .models import TuyaDeviceConfig
 
 _LOGGER = logging.getLogger(__name__)
 
-# Tiempo máximo de espera para cualquier operación LAN
-_TUYA_TIMEOUT = 2
-# Reintentos antes de marcar unavailable
-_MAX_STATUS_RETRIES = 1
+# TinyTuya's socket timeout is 3 seconds. The outer asyncio timeout must be
+# longer than that (and include TinyTuya's socket retry) or HA cancels healthy,
+# but slow, Wi-Fi devices before the LAN request can finish.
+_TUYA_TIMEOUT = 8
+_MAX_STATUS_ATTEMPTS = 2
+# A single lost Wi-Fi packet must not flip every entity to unavailable.
+_UNAVAILABLE_AFTER_FAILURES = 3
 
 
 class OmniTuyaDevice:
@@ -32,6 +35,10 @@ class OmniTuyaDevice:
         self._last_dps: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._consecutive_failures: int = 0
+        self._last_error_detail: str = ""
+        self._runtime_version: str | None = None
+        self._detected_protocol_version: str | None = None
+        self._probed_config_version: str = ""
         
         self._listening = False
         if self.config.device_type == "alarm_kit":
@@ -49,6 +56,15 @@ class OmniTuyaDevice:
     def consecutive_failures(self) -> int:
         return self._consecutive_failures
 
+    @property
+    def last_error_detail(self) -> str:
+        return self._last_error_detail
+
+    @property
+    def detected_protocol_version(self) -> str | None:
+        """A verified LAN protocol that the coordinator should persist."""
+        return self._detected_protocol_version
+
     def update_config(self, config: dict[str, Any]) -> None:
         """Actualizar configuración del dispositivo (ej: nueva IP, versión, o local key) sin reconstruir."""
         old_host = self.config.host
@@ -64,24 +80,28 @@ class OmniTuyaDevice:
         ):
             # IP, versión o local key cambió — invalidar cliente para forzar reconexión
             self._tuya = None
+            self._runtime_version = None
+            self._detected_protocol_version = None
+            self._probed_config_version = ""
             _LOGGER.info(
                 "Device %s config updated (IP: %s → %s, Ver: %s → %s), reconnecting",
                 self.device_id, old_host, self.config.host, old_version, self.config.version,
             )
 
-    def _build_tuya(self):
+    def _build_tuya(self, version: str | None = None):
         """Construir cliente TinyTuya. Siempre crea instancia nueva."""
         import tinytuya
 
         if not self.config.has_host:
             raise ValueError(f"Device {self.device_id} has no IP address configured")
 
+        effective_version = version or self._runtime_version or self.config.version or "3.3"
         if self.config.is_sub_device:
             parent = tinytuya.Device(
                 dev_id=self.config.gateway_id,
                 address=self.config.effective_host,
                 local_key=self.config.gateway_local_key or self.config.local_key,
-                version=float(self.config.version or 3.3),
+                version=float(effective_version),
             )
             parent.set_socketPersistent(False)
             parent.set_socketTimeout(5.0)
@@ -96,7 +116,7 @@ class OmniTuyaDevice:
                 dev_id=self.device_id,
                 address=self.config.host,
                 local_key=self.config.local_key,
-                version=float(self.config.version or 3.3),
+                version=float(effective_version),
             )
             device.set_socketPersistent(False)
             device.set_socketTimeout(3.0)
@@ -119,11 +139,41 @@ class OmniTuyaDevice:
         raw = device.status()
         if raw and isinstance(raw, dict):
             if "dps" in raw:
+                self._last_error_detail = ""
                 return dict(raw["dps"])
-            _LOGGER.warning("Tuya device %s status returned no dps. Raw response: %s", self.device_id, raw)
+            # TinyTuya reports normal LAN packet loss as a dictionary rather
+            # than raising. Keep the reason for diagnostics but avoid emitting
+            # a warning for every retry/poll cycle.
+            self._last_error_detail = str(raw.get("Payload") or raw.get("Error") or raw)
+            _LOGGER.debug("Tuya device %s status returned no dps: %s", self.device_id, raw)
         else:
-            _LOGGER.warning("Tuya device %s status returned empty or non-dict response: %s", self.device_id, raw)
+            self._last_error_detail = str(raw)
+            _LOGGER.debug("Tuya device %s status returned empty response: %s", self.device_id, raw)
         return None
+
+    def _mark_online(self) -> None:
+        self._available = True
+        self._consecutive_failures = 0
+        self._last_error_detail = ""
+
+    def _mark_failure(self, reason: Exception | str | None) -> None:
+        """Apply availability hysteresis so brief Wi-Fi loss does not flap."""
+        self._consecutive_failures += 1
+        detail = str(reason or self._last_error_detail or "no DPS response")
+        self._last_error_detail = detail
+        if self._consecutive_failures >= _UNAVAILABLE_AFTER_FAILURES:
+            if self._available and self._consecutive_failures == _UNAVAILABLE_AFTER_FAILURES:
+                _LOGGER.warning(
+                    "Device %s (%s) unavailable after %d failed polls: %s",
+                    self.device_id, self.config.host, self._consecutive_failures, detail,
+                )
+            self._available = False
+        else:
+            _LOGGER.debug(
+                "Transient LAN failure for %s (%d/%d before unavailable): %s",
+                self.device_id, self._consecutive_failures,
+                _UNAVAILABLE_AFTER_FAILURES, detail,
+            )
 
 
     def _sync_set_status(self, value: bool, dps_id: int) -> None:
@@ -138,6 +188,21 @@ class OmniTuyaDevice:
         device = self._get_or_build_tuya()
         device.set_multiple_values(dps_dict)
 
+    def _sync_probe_protocol_versions(self) -> tuple[str, dict[str, Any]] | None:
+        """Try alternative Tuya LAN protocol versions once after error 914."""
+        for version in ("3.5", "3.4", "3.3", "3.1"):
+            if version == str(self.config.version):
+                continue
+            try:
+                candidate = self._build_tuya(version)
+                raw = candidate.status()
+                if isinstance(raw, dict) and isinstance(raw.get("dps"), dict):
+                    self._tuya = candidate
+                    return version, dict(raw["dps"])
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Protocol %s did not work for %s: %s", version, self.device_id, err)
+        return None
+
     async def async_status(self) -> dict[str, Any]:
         """Obtener estado del dispositivo con reintentos y timeout."""
         async with self._lock:
@@ -146,7 +211,7 @@ class OmniTuyaDevice:
                 return self.dps
 
             last_err: Exception | None = None
-            for attempt in range(_MAX_STATUS_RETRIES):
+            for attempt in range(_MAX_STATUS_ATTEMPTS):
                 try:
                     dps = await asyncio.wait_for(
                         self.hass.async_add_executor_job(self._sync_status),
@@ -154,33 +219,54 @@ class OmniTuyaDevice:
                     )
                     if dps is not None:
                         self._last_dps.update(dps)
-                        self._available = True
-                        self._consecutive_failures = 0
+                        self._mark_online()
                         return self.dps
-                    raise ConnectionError("Empty or invalid status response from Tuya device")
+                    raise ConnectionError(self._last_error_detail or "Empty or invalid status response")
                 except asyncio.TimeoutError as err:
                     last_err = err
                     _LOGGER.debug(
                         "Timeout polling %s (attempt %d/%d)",
-                        self.device_id, attempt + 1, _MAX_STATUS_RETRIES,
+                        self.device_id, attempt + 1, _MAX_STATUS_ATTEMPTS,
                     )
                     self._invalidate_client()
                 except Exception as err:
                     last_err = err
                     _LOGGER.debug(
                         "Poll error for %s (attempt %d/%d): %s",
-                        self.device_id, attempt + 1, _MAX_STATUS_RETRIES, err,
+                        self.device_id, attempt + 1, _MAX_STATUS_ATTEMPTS, err,
                     )
                     self._invalidate_client()
+                if attempt + 1 < _MAX_STATUS_ATTEMPTS:
+                    await asyncio.sleep(0.2)
 
-            # Todos los reintentos fallaron
-            self._consecutive_failures += 1
-            if self._available:
-                _LOGGER.warning(
-                    "Device %s (%s) became unavailable: %s",
-                    self.device_id, self.config.host, last_err,
-                )
-            self._available = False
+            # Error 914 means the device answered on the LAN but rejected the
+            # encryption framing. Protocol changes are safe to test once; a
+            # missing/rotated local key will still fail all candidates.
+            if (
+                "Check device key or version" in self._last_error_detail
+                and self._probed_config_version != str(self.config.version)
+            ):
+                self._probed_config_version = str(self.config.version)
+                try:
+                    probe = await asyncio.wait_for(
+                        self.hass.async_add_executor_job(self._sync_probe_protocol_versions),
+                        timeout=16,
+                    )
+                except asyncio.TimeoutError:
+                    probe = None
+                if probe is not None:
+                    version, dps = probe
+                    self._runtime_version = version
+                    self._detected_protocol_version = version
+                    self._last_dps.update(dps)
+                    self._mark_online()
+                    _LOGGER.info(
+                        "Device %s responded with Tuya protocol %s; saving detected version",
+                        self.device_id, version,
+                    )
+                    return self.dps
+
+            self._mark_failure(last_err)
             return self.dps
 
     async def async_set_status(self, value: bool, dps_id: int = 1) -> bool:
@@ -197,21 +283,21 @@ class OmniTuyaDevice:
                     timeout=_TUYA_TIMEOUT,
                 )
                 self._last_dps[str(dps_id)] = value
-                self._available = True
-                self._consecutive_failures = 0
+                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
                     "Timeout sending set_status to %s dps %s", self.device_id, dps_id
                 )
                 self._invalidate_client()
+                self._mark_failure("Timeout sending set_status")
                 return False
             except Exception as err:
                 _LOGGER.error(
                     "Command failed for %s dps %s: %s", self.device_id, dps_id, err
                 )
                 self._invalidate_client()
-                self._available = False
+                self._mark_failure(err)
                 return False
 
     async def async_set_value(self, dps_id: int, value: Any) -> bool:
@@ -228,21 +314,21 @@ class OmniTuyaDevice:
                     timeout=_TUYA_TIMEOUT,
                 )
                 self._last_dps[str(dps_id)] = value
-                self._available = True
-                self._consecutive_failures = 0
+                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
                     "Timeout sending value to %s dps %s", self.device_id, dps_id
                 )
                 self._invalidate_client()
+                self._mark_failure("Timeout sending value")
                 return False
             except Exception as err:
                 _LOGGER.error(
                     "Value command failed for %s dps %s: %s", self.device_id, dps_id, err
                 )
                 self._invalidate_client()
-                self._available = False
+                self._mark_failure(err)
                 return False
 
     async def async_set_values(self, dps_dict: dict[str, Any]) -> bool:
@@ -263,21 +349,21 @@ class OmniTuyaDevice:
                 )
                 for dps_id, value in stringified_dict.items():
                     self._last_dps[dps_id] = value
-                self._available = True
-                self._consecutive_failures = 0
+                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
                     "Timeout sending multiple values to %s: %s", self.device_id, dps_dict
                 )
                 self._invalidate_client()
+                self._mark_failure("Timeout sending multiple values")
                 return False
             except Exception as err:
                 _LOGGER.error(
                     "Multiple values command failed for %s (%s): %s", self.device_id, dps_dict, err
                 )
                 self._invalidate_client()
-                self._available = False
+                self._mark_failure(err)
                 return False
 
     async def async_fetch_raw_dps(self) -> dict[str, Any]:
