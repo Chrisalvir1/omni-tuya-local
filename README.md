@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.5.24-blue?style=flat-square"/>
-  <img src="https://img.shields.io/badge/HA-2026.6.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
+  <img src="https://img.shields.io/badge/versión-0.5.41-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
@@ -22,6 +22,8 @@
 **Omni Tuya Local** es una integración nativa de Home Assistant que controla tus dispositivos Tuya **directamente en tu red local**, usando el protocolo propietario de Tuya (vía `tinytuya`).
 
 La nube de Tuya se usa **únicamente** para importar la ficha completa del dispositivo: ID, local key, nombre, producto, categoría, tipo sugerido y metadatos. El control en tiempo real es 100% local.
+
+Al recibir el primer estado LAN de cada dispositivo, Omni detecta y guarda sus DPS reales. Los DPS numéricos o de texto no reconocidos aparecen como sensores de solo lectura y los booleanos como sensores binarios; si la nube entrega el esquema del producto, se usan sus nombres. Omni no convierte un DPS desconocido en control para no enviar comandos inseguros.
 
 ```
 App / HA  ──────►  Omni Tuya Local  ──────►  Dispositivo Tuya
@@ -75,7 +77,7 @@ Apple Home no ofrece un selector numérico nativo para una entidad `number` de H
 ## Instalación
 
 ### Requisitos previos
-- Home Assistant **2026.6.1** o superior
+- Home Assistant **2026.7.1** o superior
 - HACS instalado
 - Cuenta en [Tuya IoT Platform](https://iot.tuya.com/) (para importar dispositivos)
 

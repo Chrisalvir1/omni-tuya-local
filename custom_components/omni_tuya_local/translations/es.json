@@ -47,6 +47,10 @@
         "data": {
           "name": "Nombre"
         }
+      },
+      "sync_cloud": {
+        "title": "Sincronizar Tuya Cloud",
+        "description": "Presiona Enviar para buscar dispositivos nuevos y actualizar nombres, local keys y metadatos desde Smart Life/Tuya."
       }
     },
     "error": {
@@ -57,7 +61,8 @@
     },
     "abort": {
       "already_configured": "Este dispositivo ya está configurado.",
-      "unique_id_mismatch": "El ID del dispositivo no coincide."
+      "unique_id_mismatch": "El ID del dispositivo no coincide.",
+      "bulk_import_done": "Sincronización terminada. Se agregaron {added} dispositivos nuevos."
     }
   },
   "options": {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -8,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import async_track_time_interval
 
 from .cloud import async_fetch_cloud_devices
 from .const import (
@@ -20,6 +22,7 @@ from .const import (
     CONF_REGION,
     CONF_VERSION,
     BUILD_NUMBER,
+    DEFAULT_CLOUD_SYNC_INTERVAL,
     DEFAULT_REGION,
     DEFAULT_VERSION,
     DEVICE_TYPES,
@@ -101,7 +104,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     active_store = store
 
     if entry.data and entry.data.get(CONF_DEVICE_ID) and entry.data.get(CONF_LOCAL_KEY):
-        await store.add(dict(entry.data))
+        # Config-entry data is the bootstrap snapshot from the day the device
+        # was added.  Do not overwrite the durable inventory on every restart:
+        # it contains cloud-renamed devices, rediscovered IPs, refreshed keys,
+        # and user settings saved after that initial setup.
+        if not store.get(entry.data[CONF_DEVICE_ID]):
+            await store.add(dict(entry.data))
         active_store = _ScopedTuyaDeviceStore(store, entry.data[CONF_DEVICE_ID])
     elif entry.data:
         store.cloud_config.update({k: v for k, v in entry.data.items() if v})
@@ -146,6 +154,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_register_services(hass, entry.entry_id)
+
+    # The cloud-sync control is integration-wide, not a physical Tuya device.
+    # Remove the virtual device created by older releases so it no longer
+    # appears under every configured device after an update/restart.
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+
+    # Remove old button entities that used per-entry unique_ids
+    old_entity_id = entity_registry.async_get_entity_id("button", DOMAIN, f"{DOMAIN}_{entry.entry_id}_sync_cloud")
+    if old_entity_id:
+        entity_registry.async_remove(old_entity_id)
+
+    hub_device = device_registry.async_get_device(identifiers={(DOMAIN, "hub")})
+    if hub_device:
+        device_registry.async_remove_device(hub_device.id)
+
     return True
 
 
@@ -154,6 +180,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         coordinator: OmniTuyaLocalCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_shutdown()
+        # Platform entities are unloaded with the entry.  Allow the singleton
+        # cloud-sync button to be registered again when the integration is
+        # subsequently reloaded.
+        if not any(
+            isinstance(value, OmniTuyaLocalCoordinator)
+            for value in hass.data[DOMAIN].values()
+        ):
+            hass.data[DOMAIN].pop("_global_sync_button_added", None)
     return unload_ok
 
 
@@ -282,8 +316,21 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         )
         imported = await store.add_many(devices)
 
+        # Smart Life names are cloud metadata.  Keep the config-entry title in
+        # sync too; otherwise the device card continues showing the old name
+        # even though the inventory was refreshed successfully.
+        entries_by_device_id = {
+            config_entry.data.get(CONF_DEVICE_ID): config_entry
+            for config_entry in hass.config_entries.async_entries(DOMAIN)
+        }
+        for device in imported:
+            config_entry = entries_by_device_id.get(device[CONF_DEVICE_ID])
+            name = device.get("name")
+            if config_entry and name and config_entry.title != name:
+                hass.config_entries.async_update_entry(config_entry, title=name)
+
         # Crear entrada para cada dispositivo nuevo
-        existing_entries = [e.data.get(CONF_DEVICE_ID) for e in hass.config_entries.async_entries(DOMAIN)]
+        existing_entries = set(entries_by_device_id)
         for dev in imported:
             if dev["device_id"] not in existing_entries:
                 hass.async_create_task(
@@ -299,6 +346,30 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
             await coord.async_reload_devices()
 
         return {"imported": len(imported), "devices": imported}
+
+    # Refreshing the cloud is only for metadata (new devices, names and local
+    # keys).  Device control remains fully local.  One timer for the whole
+    # integration avoids API bursts caused by having one config entry/device.
+    if "_cloud_sync_unsub" not in hass.data[DOMAIN]:
+        async def _periodic_cloud_sync(_now) -> None:
+            store = TuyaDeviceStore(hass)
+            await store.async_load()
+            if not (
+                store.cloud_config.get(CONF_API_KEY)
+                and store.cloud_config.get(CONF_API_SECRET)
+            ):
+                return
+            try:
+                await hass.services.async_call(
+                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Periodic Tuya cloud sync failed: %s", err)
+
+        hass.data[DOMAIN]["_cloud_sync_unsub"] = async_track_time_interval(
+            hass, _periodic_cloud_sync,
+            timedelta(seconds=DEFAULT_CLOUD_SYNC_INTERVAL),
+        )
 
     async def reload_devices(call: ServiceCall) -> None:
         coord = _coordinator(hass, entry_id)

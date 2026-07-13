@@ -20,6 +20,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
+from .dps import discovered_dps
 from .entity import OmniTuyaEntity
 
 # ── Mapeo device_type/category → (SensorDeviceClass, unit, state_class) ──────
@@ -89,17 +90,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async def add_new_entities() -> None:
         entities = []
         for config in coordinator.store.all().values():
+            configured_dps: set[str] = set()
             if config.get("domain") != "sensor":
-                continue
-            dps_map = config.get("dps_map") or {"1": {"name": config.get("name"), "unit": None}}
-            for dps_id, desc in dps_map.items():
-                uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"
+                dps_map = {}
+            else:
+                dps_map = config.get("dps_map") or {
+                    "1": {"name": config.get("name"), "unit": None}
+                }
+                for dps_id, desc in dps_map.items():
+                    dps_id = str(dps_id)
+                    configured_dps.add(dps_id)
+                    uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"
+                    if uid not in _known_unique_ids:
+                        _known_unique_ids.add(uid)
+                        entities.append(
+                            OmniTuyaSensor(
+                                coordinator, config, dps_id,
+                                desc if isinstance(desc, dict) else {}
+                            )
+                        )
+
+            # Every numeric/text value actually observed on the LAN is exposed
+            # read-only.  Unknown Tuya DPS are deliberately sensors, not
+            # controls, so a product-specific command is never guessed.
+            for dps_id, info in discovered_dps(config).items():
+                if info["kind"] not in {"number", "text"} or dps_id in configured_dps:
+                    continue
+                uid = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}"
                 if uid not in _known_unique_ids:
                     _known_unique_ids.add(uid)
                     entities.append(
                         OmniTuyaSensor(
-                            coordinator, config, str(dps_id),
-                            desc if isinstance(desc, dict) else {}
+                            coordinator, config, dps_id, {"name": info["name"]}
                         )
                     )
         if entities:

@@ -49,12 +49,11 @@ async def async_fetch_cloud_devices(
         else:
             return []
 
-        # Product functions are the authoritative way to resolve the wildly
-        # different DP ids used by Tuya pet feeders.  A failed schema lookup is
-        # non-fatal: LAN control and existing mappings continue to work.
+        # Product functions label the otherwise product-specific DPS numbers.
+        # A failed schema lookup is non-fatal: LAN control continues to work.
         for device in result:
             dev_id = device.get("id")
-            if not dev_id or guess_device_type(device) != "pet_feeder":
+            if not dev_id:
                 continue
             try:
                 functions = cloud.getfunctions(dev_id)

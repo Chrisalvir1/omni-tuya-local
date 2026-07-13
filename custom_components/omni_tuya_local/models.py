@@ -33,6 +33,7 @@ class TuyaDeviceConfig:
     enabled: bool = True
     poll_interval: int = 30
     dps_map: dict[str, Any] = field(default_factory=dict)
+    discovered_dps: dict[str, dict[str, str]] = field(default_factory=dict)
     gateway_id: str = ""
     node_id: str = ""
     gateway_host: str = ""
@@ -64,6 +65,7 @@ class TuyaDeviceConfig:
             enabled=bool(data.get("enabled", True)),
             poll_interval=int(data.get("poll_interval") or 30),
             dps_map=dict(data.get("dps_map") or {}),
+            discovered_dps=dict(data.get("discovered_dps") or {}),
             gateway_id=str(data.get("gateway_id") or ""),
             node_id=str(data.get("node_id") or data.get("cid") or ""),
             gateway_host=str(data.get("gateway_host") or data.get("gateway_ip") or ""),
@@ -95,6 +97,7 @@ class TuyaDeviceConfig:
             "enabled": self.enabled,
             "poll_interval": self.poll_interval,
             "dps_map": self.dps_map,
+            "discovered_dps": self.discovered_dps,
             "gateway_id": self.gateway_id,
             "node_id": self.node_id,
             "gateway_host": self.gateway_host,

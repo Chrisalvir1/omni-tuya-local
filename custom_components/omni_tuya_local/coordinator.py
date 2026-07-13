@@ -16,6 +16,7 @@ from .const import (
     MAX_POLL_FAILURES,
 )
 from .device import OmniTuyaDevice
+from .dps import schema_from_dps
 from .storage import TuyaDeviceStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         dps_by_device: dict[str, dict[str, Any]] = {}
         availability: dict[str, bool] = {}
+        dps_schema_changed = False
 
         for (device_id, device), result in zip(device_items, results):
             if isinstance(result, Exception):
@@ -65,6 +67,19 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 dps_by_device[device_id] = device.dps
             else:
                 dps_by_device[device_id] = result
+
+            # Persist only the shape observed on the LAN, not values.  This
+            # lets entities remain visible after a restart even if a device is
+            # temporarily offline, while avoiding unsafe guessed controls.
+            config = self.store.get(device_id)
+            if config and dps_by_device[device_id]:
+                schema = schema_from_dps(config, dps_by_device[device_id])
+                if schema != config.get("discovered_dps", {}):
+                    updated = dict(config)
+                    updated["discovered_dps"] = schema
+                    await self.store.add(updated)
+                    device.update_config(updated)
+                    dps_schema_changed = True
 
             availability[device_id] = device.available
             # Backoff: si el device falla muchas veces, ajustar interval dinámicamente
@@ -77,6 +92,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Ajustar update_interval dinámicamente según estado general de dispositivos
         self._adjust_poll_interval()
+
+        if dps_schema_changed:
+            self._notify_entity_refresh()
 
         return {
             "devices": self.store.all(),

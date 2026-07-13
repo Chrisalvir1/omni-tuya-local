@@ -47,6 +47,10 @@
         "data": {
           "name": "Name"
         }
+      },
+      "sync_cloud": {
+        "title": "Sync Tuya Cloud",
+        "description": "Press Submit to find new devices and refresh names, local keys, and metadata from Smart Life/Tuya."
       }
     },
     "error": {
@@ -57,7 +61,8 @@
     },
     "abort": {
       "already_configured": "This device is already configured.",
-      "unique_id_mismatch": "Device ID does not match."
+      "unique_id_mismatch": "Device ID does not match.",
+      "bulk_import_done": "Sync complete. {added} new devices were added."
     }
   },
   "options": {

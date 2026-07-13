@@ -93,6 +93,8 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         )
 
                 return await self.async_step_cloud_credentials()
+            if mode == "sync_cloud":
+                return await self.async_step_sync_cloud()
             if mode == "manual_device":
                 return await self.async_step_local_device()
 
@@ -103,6 +105,10 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     SelectOptionDict(
                         value="cloud_device",
                         label="Agregar desde Tuya Cloud (recomendado — trae local key automáticamente)",
+                    ),
+                    SelectOptionDict(
+                        value="sync_cloud",
+                        label="🔄 Sincronizar Tuya Cloud y buscar dispositivos nuevos",
                     ),
                     SelectOptionDict(
                         value="manual_device",
@@ -198,8 +204,17 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             device_id = user_input[CONF_DEVICE_ID]
             if device_id == "import_all":
-                # Crear entrada para cada dispositivo
-                existing_entries = [e.data.get(CONF_DEVICE_ID) for e in self.hass.config_entries.async_entries(DOMAIN)]
+                # Persist first, then create only the missing config entries.
+                # There is intentionally no artificial "hub" entry: one entry
+                # is created per physical Tuya device.
+                from .storage import TuyaDeviceStore
+                store = TuyaDeviceStore(self.hass)
+                await store.async_load()
+                await store.add_many(self._cloud_devices)
+                existing_entries = {
+                    entry.data.get(CONF_DEVICE_ID)
+                    for entry in self.hass.config_entries.async_entries(DOMAIN)
+                }
                 added = 0
                 for dev in self._cloud_devices:
                     if dev["device_id"] not in existing_entries:
@@ -211,12 +226,6 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 data=dev,
                             )
                         )
-                
-                # Crear entrada "Tuya Cloud Hub" para los botones globales si no existe
-                hub_exists = any(e.title == "Omni Tuya Cloud" for e in self.hass.config_entries.async_entries(DOMAIN))
-                if not hub_exists:
-                    return self.async_create_entry(title="Omni Tuya Cloud", data={"hub": True})
-                
                 return self.async_abort(reason="bulk_import_done", description_placeholders={"added": str(added)})
 
             self._selected_cloud_device = next(
@@ -360,6 +369,57 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="device_details",
             data_schema=vol.Schema({vol.Required(CONF_NAME, default=default_name): str}),
+        )
+
+    async def async_step_sync_cloud(self, user_input: dict[str, Any] | None = None):
+        """Sync from the Add Integration panel using stored credentials."""
+        from .storage import TuyaDeviceStore
+
+        store = TuyaDeviceStore(self.hass)
+        await store.async_load()
+        if not (
+            store.cloud_config.get(CONF_API_KEY)
+            and store.cloud_config.get(CONF_API_SECRET)
+        ):
+            return await self.async_step_cloud_credentials()
+
+        if user_input is not None:
+            devices = await async_fetch_cloud_devices(
+                self.hass,
+                store.cloud_config[CONF_API_KEY],
+                store.cloud_config[CONF_API_SECRET],
+                store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
+                "",
+            )
+            devices = [device for device in devices if device.get(CONF_LOCAL_KEY)]
+            await store.add_many(devices)
+            entries_by_device_id = {
+                entry.data.get(CONF_DEVICE_ID): entry
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+            }
+            for device in devices:
+                entry = entries_by_device_id.get(device[CONF_DEVICE_ID])
+                if entry and device.get("name") and entry.title != device["name"]:
+                    self.hass.config_entries.async_update_entry(entry, title=device["name"])
+            existing_entries = set(entries_by_device_id)
+            new_devices = [device for device in devices if device[CONF_DEVICE_ID] not in existing_entries]
+            for device in new_devices:
+                self.hass.async_create_task(
+                    self.hass.config_entries.flow.async_init(
+                        DOMAIN, context={"source": "import"}, data=device
+                    )
+                )
+            for value in self.hass.data.get(DOMAIN, {}).values():
+                if hasattr(value, "async_reload_devices"):
+                    await value.async_reload_devices()
+            return self.async_abort(
+                reason="bulk_import_done",
+                description_placeholders={"added": str(len(new_devices))},
+            )
+
+        return self.async_show_form(
+            step_id="sync_cloud",
+            description_placeholders={},
         )
 
     @staticmethod

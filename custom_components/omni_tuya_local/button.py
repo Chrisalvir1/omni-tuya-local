@@ -140,9 +140,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator.register_entity_refresh_callback(add_new_entities)
     await add_new_entities()
 
-    # Agregar el botón global de sincronización solo a la primera entrada
-    first_entry = hass.config_entries.async_entries(DOMAIN)[0]
-    if entry.entry_id == first_entry.entry_id:
+    # Agregar el control global una sola vez.  It deliberately has no
+    # DeviceInfo: syncing cloud metadata is an integration action, not a hub
+    # device that should be shown alongside every physical Tuya device.
+    if not hass.data[DOMAIN].get("_global_sync_button_added"):
+        hass.data[DOMAIN]["_global_sync_button_added"] = True
         async_add_entities([OmniTuyaSyncCloudButton(coordinator, entry.entry_id)])
 
 
@@ -157,12 +159,6 @@ class OmniTuyaSyncCloudButton(ButtonEntity):
         self.entry_id = entry_id
         self._attr_unique_id = f"{DOMAIN}_global_sync_cloud"
         self._attr_name = "Sincronizar Nube"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, "hub")},
-            "name": "Omni Tuya Local Hub",
-            "manufacturer": "Omni Tuya Local",
-            "model": "Integration Hub",
-        }
 
     async def async_press(self) -> None:
         """Activar la sincronización con la nube."""

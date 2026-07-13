@@ -235,7 +235,7 @@ scan_network:
 
 sync_cloud:
   name: Sincronizar con Tuya Cloud
-  description: Importa device IDs y local keys desde Tuya IoT Cloud. Las credenciales son opcionales si ya están guardadas.
+  description: Busca dispositivos nuevos y actualiza nombres, local keys y metadatos desde Tuya IoT Cloud; las entidades se recargan al terminar. Las credenciales son opcionales si ya están guardadas. La integración también hace esta sincronización automáticamente cada 6 horas.
   fields:
     api_key:
       name: Access ID
