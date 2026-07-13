@@ -11,6 +11,10 @@ from .pet_feeder import function_id
 _LOGGER = logging.getLogger(__name__)
 
 
+class TuyaCloudError(ValueError):
+    """An API error safe to show to the Home Assistant administrator."""
+
+
 def normalize_mac(value: Any) -> str:
     """Return a MAC in a comparable form, or an empty string if invalid."""
     compact = "".join(char for char in str(value or "").lower() if char in "0123456789abcdef")
@@ -40,36 +44,71 @@ async def async_fetch_cloud_devices(
     def _sync_fetch() -> list[dict[str, Any]]:
         import tinytuya
 
-        cloud = tinytuya.Cloud(
-            apiRegion=api_region,
-            apiKey=api_key,
-            apiSecret=api_secret,
-            # TinyTuya expects apiDeviceID.  Passing the historical ``devId``
-            # spelling is silently accepted through **extrakw but ignored,
-            # which can make getdevices resolve the wrong Smart Life account.
-            apiDeviceID=device_id or None,
-        )
+        def _error_detail(payload: Any) -> str:
+            """Normalize TinyTuya's two error response formats."""
+            if not isinstance(payload, dict):
+                return type(payload).__name__
+            if "Payload" in payload:
+                return str(payload["Payload"])
+            return f"{payload.get('code', '?')}: {payload.get('msg', 'unknown')}"
+
+        def _is_error(payload: Any) -> bool:
+            return isinstance(payload, dict) and (
+                "Error" in payload or "Err" in payload or not payload.get("success", True)
+            )
+
+        def _cloud_with_id(initial_device_id: str | None):
+            return tinytuya.Cloud(
+                apiRegion=api_region,
+                apiKey=api_key,
+                apiSecret=api_secret,
+                # TinyTuya expects apiDeviceID.  Passing the historical
+                # ``devId`` spelling is silently accepted but ignored.
+                apiDeviceID=initial_device_id,
+            )
+
+        cloud = _cloud_with_id(device_id or None)
         devices = cloud.getdevices()
+        # A virtual ID can be stale, belong to another Tuya project, or be
+        # unavailable to this API client.  Try the project-wide device lookup
+        # before failing the whole sync; it works for linked Smart Life
+        # accounts that expose their devices directly to the IoT project.
+        if device_id and _is_error(devices):
+            first_error = _error_detail(devices)
+            _LOGGER.warning(
+                "Tuya lookup with configured virtual ID failed (%s); retrying without it",
+                first_error,
+            )
+            fallback_cloud = _cloud_with_id(None)
+            fallback_devices = fallback_cloud.getdevices()
+            if isinstance(fallback_devices, list) or not _is_error(fallback_devices):
+                cloud, devices = fallback_cloud, fallback_devices
+            else:
+                raise TuyaCloudError(
+                    "Tuya rechazó la consulta con ID virtual "
+                    f"({first_error}) y también sin ID ({_error_detail(fallback_devices)})."
+                )
         if isinstance(devices, list):
             result = devices
         elif isinstance(devices, dict):
             # Detectar error de autenticación / permisos de la API Tuya
-            if not devices.get("success", True):
-                code = devices.get("code", "?")
-                msg = devices.get("msg", "unknown")
+            if _is_error(devices):
+                detail = _error_detail(devices)
                 _LOGGER.error(
-                    "Tuya Cloud API error — code: %s, msg: %s. "
+                    "Tuya Cloud API error — %s. "
                     "Verifica: Access ID, Access Secret, región del proyecto "
                     "y que la cuenta de la app esté vinculada al proyecto IoT.",
-                    code, msg,
+                    detail,
                 )
-                raise ValueError(f"Tuya Cloud error {code}: {msg}")
+                raise TuyaCloudError(f"Tuya Cloud error: {detail}")
             result = devices.get("result")
             if not isinstance(result, list):
                 _LOGGER.warning("Tuya Cloud returned unexpected payload: %s", devices)
-                return []
+                raise TuyaCloudError("Tuya Cloud respondió sin una lista de dispositivos")
         else:
-            return []
+            raise TuyaCloudError(
+                f"Tuya Cloud no devolvió una respuesta válida ({type(devices).__name__})"
+            )
 
         # Product functions label the otherwise product-specific DPS numbers.
         # A failed schema lookup is non-fatal: LAN control continues to work.

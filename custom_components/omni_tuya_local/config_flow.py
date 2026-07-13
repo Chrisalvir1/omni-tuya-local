@@ -39,6 +39,20 @@ from .cloud import async_fetch_cloud_devices, find_cloud_device_by_mac, normaliz
 _LOGGER = logging.getLogger(__name__)
 
 
+def _notify_cloud_failure(hass, err: Exception) -> None:
+    """Expose Tuya's actual error in HA without including credentials."""
+    detail = " ".join(str(err).split())[:500] or type(err).__name__
+    persistent_notification.async_create(
+        hass,
+        "Tuya Cloud rechazó la consulta. Este es el detalle devuelto por la API:\n\n"
+        f"`{detail}`\n\n"
+        "No contiene tus credenciales. Si aparece un código, compártelo junto "
+        "con los registros de Omni Tuya Local para diagnosticarlo.",
+        title="Omni Tuya Local — Detalle de error Tuya Cloud",
+        notification_id=f"{DOMAIN}_cloud_error",
+    )
+
+
 def _sync_result_placeholders(result: dict[str, Any] | None) -> dict[str, str]:
     """Make a compact, user-facing summary from the sync service response."""
     result = result or {}
@@ -192,6 +206,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 logging.getLogger(__name__).error(
                     "Tuya Cloud credentials error: %s", err
                 )
+                _notify_cloud_failure(self.hass, err)
                 errors["base"] = "cloud_error"
 
         current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
@@ -439,6 +454,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.exception("Tuya Cloud sync from config flow failed: %s", err)
+                _notify_cloud_failure(self.hass, err)
                 errors["base"] = "cloud_error"
 
         return self.async_show_form(
@@ -468,6 +484,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.exception("Tuya Cloud sync from setup flow failed: %s", err)
+            _notify_cloud_failure(self.hass, err)
             return self.async_abort(reason="sync_failed")
 
     @staticmethod
@@ -555,6 +572,7 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
                         )
                     except Exception as err:  # noqa: BLE001
                         _LOGGER.exception("Tuya cloud MAC lookup failed: %s", err)
+                        _notify_cloud_failure(self.hass, err)
                         errors["base"] = "cloud_error"
                     else:
                         device = find_cloud_device_by_mac(devices, mac)
@@ -773,6 +791,7 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.exception("Tuya Cloud sync from options menu failed: %s", err)
+            _notify_cloud_failure(self.hass, err)
             return self.async_abort(reason="sync_failed")
 
         persistent_notification.async_create(
