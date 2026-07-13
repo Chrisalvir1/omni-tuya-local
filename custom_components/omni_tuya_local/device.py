@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -34,6 +35,7 @@ class OmniTuyaDevice:
         self._tuya = None
         self._available = False
         self._last_dps: dict[str, Any] = {}
+        self._last_status_at: float = 0.0
         self._lock = asyncio.Lock()
         self._command_lock = asyncio.Lock()
         self._consecutive_failures: int = 0
@@ -53,6 +55,11 @@ class OmniTuyaDevice:
     @property
     def dps(self) -> dict[str, Any]:
         return dict(self._last_dps)
+
+    @property
+    def last_status_at(self) -> float:
+        """Monotonic timestamp of the last actual LAN DPS response."""
+        return self._last_status_at
 
     @property
     def consecutive_failures(self) -> int:
@@ -229,6 +236,7 @@ class OmniTuyaDevice:
                     )
                     if dps is not None:
                         self._last_dps.update(dps)
+                        self._last_status_at = time.monotonic()
                         self._mark_online()
                         return self.dps
                     raise ConnectionError(self._last_error_detail or "Empty or invalid status response")
@@ -269,6 +277,7 @@ class OmniTuyaDevice:
                     self._runtime_version = version
                     self._detected_protocol_version = version
                     self._last_dps.update(dps)
+                    self._last_status_at = time.monotonic()
                     self._mark_online()
                     _LOGGER.info(
                         "Device %s responded with Tuya protocol %s; saving detected version",
@@ -294,8 +303,6 @@ class OmniTuyaDevice:
                 )
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected set_status: {response}")
-                self._last_dps[str(dps_id)] = value
-                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
@@ -327,8 +334,6 @@ class OmniTuyaDevice:
                 )
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected set_value: {response}")
-                self._last_dps[str(dps_id)] = value
-                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
@@ -363,9 +368,6 @@ class OmniTuyaDevice:
                 )
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected multiple values: {response}")
-                for dps_id, value in stringified_dict.items():
-                    self._last_dps[dps_id] = value
-                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(

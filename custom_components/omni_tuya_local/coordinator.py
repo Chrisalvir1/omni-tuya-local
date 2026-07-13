@@ -411,23 +411,29 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def is_available(self, device_id: str) -> bool:
         return bool((self.data or {}).get("available", {}).get(device_id))
 
-    def _publish_optimistic_state(self, device_id: str, dps: dict[str, Any]) -> None:
-        """Publish a local command immediately; polling confirms it later."""
+    def _publish_confirmed_state(self, device_id: str, device: OmniTuyaDevice) -> None:
+        """Publish only DPS that have actually been read from the LAN."""
         data = self.data or {"devices": self.store.all(), "dps": {}, "available": {}}
-        data.setdefault("dps", {}).setdefault(device_id, {}).update(dps)
-        data.setdefault("available", {})[device_id] = True
+        data.setdefault("dps", {})[device_id] = device.dps
+        data.setdefault("available", {})[device_id] = device.available
         self.async_set_updated_data(data)
 
-    def _schedule_command_verification(self, device_id: str) -> None:
-        """Verify after control without keeping the service call waiting."""
+    def _schedule_command_verification(self, device_id: str, device: OmniTuyaDevice) -> None:
+        """Read only the commanded device; never block the service call."""
         active = self._verification_tasks.get(device_id)
         if active and not active.done():
             return
 
         async def _verify() -> None:
-            await asyncio.sleep(2)
+            # Most Tuya switches apply a local command in well under a second.
+            # Do not overwrite HA with the requested value: publish only a
+            # fresh DPS response from the same LAN device.
+            await asyncio.sleep(0.6)
+            before = device.last_status_at
             try:
-                await self.async_request_refresh()
+                await device.async_status()
+                if device.last_status_at > before:
+                    self._publish_confirmed_state(device_id, device)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("Background command verification failed for %s: %s", device_id, err)
 
@@ -440,8 +446,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         ok = await device.async_set_status(value, dps_id)
         if ok:
-            self._publish_optimistic_state(device_id, {str(dps_id): value})
-            self._schedule_command_verification(device_id)
+            self._schedule_command_verification(device_id, device)
         return ok
 
     async def async_set_value(self, device_id: str, dps_id: int, value: Any) -> bool:
@@ -451,8 +456,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         ok = await device.async_set_value(dps_id, value)
         if ok:
-            self._publish_optimistic_state(device_id, {str(dps_id): value})
-            self._schedule_command_verification(device_id)
+            self._schedule_command_verification(device_id, device)
         return ok
 
     async def async_set_values(self, device_id: str, dps_dict: dict[str, Any]) -> bool:
@@ -462,10 +466,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         ok = await device.async_set_values(dps_dict)
         if ok:
-            self._publish_optimistic_state(
-                device_id, {str(dps_id): value for dps_id, value in dps_dict.items()}
-            )
-            self._schedule_command_verification(device_id)
+            self._schedule_command_verification(device_id, device)
         return ok
 
     async def async_set_manual_feed_portions(self, device_id: str, portions: int) -> None:
