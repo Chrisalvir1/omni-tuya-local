@@ -89,6 +89,16 @@
           "device_type": "Physical device type"
         }
       },
+      "update_cloud": {
+        "title": "Update Tuya IoT credentials",
+        "description": "Save the Tuya Cloud credentials. Paste the **virtual ID** of any Smart Life device so TinyTuya can identify the linked account and retrieve name changes.",
+        "data": {
+          "region": "Region",
+          "api_key": "Access ID (API Key)",
+          "api_secret": "Access Secret",
+          "device_id": "Smart Life virtual ID (recommended)"
+        }
+      },
       "sync_cloud": {
         "title": "Sync Tuya Cloud",
         "description": "Press Submit. Omni will find new devices and update names, local keys, and metadata; this window waits for the result."
