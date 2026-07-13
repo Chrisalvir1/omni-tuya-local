@@ -10,6 +10,12 @@ from homeassistant.core import HomeAssistant
 _LOGGER = logging.getLogger(__name__)
 
 
+def _mac_token(value: Any) -> str:
+    """Normalize a MAC without importing cloud functionality into LAN scan."""
+    token = "".join(char for char in str(value or "").lower() if char in "0123456789abcdef")
+    return token if len(token) == 12 else ""
+
+
 def get_local_ip() -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -24,6 +30,7 @@ def get_local_ip() -> str:
 async def async_scan_network(
     hass: HomeAssistant,
     registry_devices: list[dict[str, Any]] | None = None,
+    full_subnet_scan: bool = True,
 ) -> list[dict[str, Any]]:
     registry_devices = registry_devices or []
     found_devices: dict[str, dict[str, Any]] = {}
@@ -67,13 +74,14 @@ async def async_scan_network(
                     "device_id": real_id,
                     "name": f"Tuya {real_id[:5]}",
                     "version": str(info.get("ver") or 3.3),
+                    "mac": info.get("mac") or info.get("mac_address") or "",
                 }
     except Exception as err:
         _LOGGER.warning("TinyTuya scan failed: %s", err)
 
     ips_to_check = set(udp_data.keys())
     ips_to_check.update(device.get("host") or device.get("ip") for device in registry_devices if device.get("host") or device.get("ip"))
-    if not found_devices:
+    if not found_devices and full_subnet_scan:
         ips_to_check.update(f"{subnet}.{idx}" for idx in range(1, 255))
 
     semaphore = asyncio.Semaphore(50)
@@ -104,7 +112,15 @@ async def async_scan_network(
             (
                 known
                 for known in registry_devices
-                if known.get("device_id") == device["device_id"] or known.get("host") == ip or known.get("ip") == ip
+                if (
+                    known.get("device_id") == device["device_id"]
+                    or known.get("host") == ip
+                    or known.get("ip") == ip
+                    or (
+                        _mac_token(known.get("mac"))
+                        and _mac_token(known.get("mac")) == _mac_token(device.get("mac"))
+                    )
+                )
             ),
             None,
         )
@@ -115,6 +131,8 @@ async def async_scan_network(
                 "ip": ip,
                 "synced": True,
             })
+            if device.get("mac") and not merged.get("mac"):
+                merged["mac"] = device["mac"]
             final.append(merged)
         else:
             device["synced"] = False

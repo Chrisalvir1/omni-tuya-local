@@ -9,9 +9,11 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     BACKOFF_POLL_INTERVAL,
+    DEFAULT_DISCOVERY_INTERVAL,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
     MAX_POLL_FAILURES,
@@ -37,6 +39,8 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._udp_transports: list[Any] = []
         self._last_recovery_scan: float = 0.0
         self._recovery_scan_task: asyncio.Task | None = None
+        self._lan_refresh_lock = asyncio.Lock()
+        self._periodic_discovery_unsub = None
         super().__init__(
             hass,
             _LOGGER,
@@ -135,28 +139,43 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._async_recover_lan_addresses()
         )
 
-    async def _async_recover_lan_addresses(self) -> None:
+    async def _async_recover_lan_addresses(self, proactive: bool = False) -> None:
         """Use Tuya broadcasts/scanning to repair a changed DHCP address."""
         from .discovery import async_scan_network
 
-        _LOGGER.info("Persistent Tuya LAN failures detected; rescanning device addresses")
-        try:
-            found = await async_scan_network(self.hass, list(self.store.all().values()))
-            changed = 0
-            for config in found:
-                if config.get("synced") and config.get("device_id"):
-                    previous = self.store.get(config["device_id"])
-                    if previous and (
-                        previous.get("host") != config.get("host")
-                        or previous.get("ip") != config.get("ip")
-                    ):
-                        await self.store.add(config)
-                        changed += 1
-            if changed:
-                _LOGGER.info("Recovered %d Tuya LAN address(es) after rescan", changed)
-                await self.async_reload_devices()
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Automatic Tuya LAN recovery scan failed: %s", err)
+        async with self._lan_refresh_lock:
+            _LOGGER.info(
+                "%s Tuya LAN addresses by device ID/MAC",
+                "Refreshing" if proactive else "Recovering persistent-failure",
+            )
+            try:
+                # Each config entry uses a scoped store, but LAN discovery is
+                # global. Use the singleton inventory so a DHCP change for
+                # any Tuya MAC can be repaired by the single periodic scan.
+                inventory = TuyaDeviceStore(self.hass)
+                await inventory.async_load()
+                found = await async_scan_network(
+                    self.hass,
+                    list(inventory.all().values()),
+                    full_subnet_scan=not proactive,
+                )
+                changed = 0
+                for config in found:
+                    if config.get("synced") and config.get("device_id"):
+                        previous = inventory.get(config["device_id"])
+                        if previous and (
+                            previous.get("host") != config.get("host")
+                            or previous.get("ip") != config.get("ip")
+                        ):
+                            await inventory.add(config)
+                            changed += 1
+                if changed:
+                    _LOGGER.info("Recovered %d Tuya LAN address(es) after rescan", changed)
+                    for coordinator in self.hass.data.get(DOMAIN, {}).values():
+                        if isinstance(coordinator, OmniTuyaLocalCoordinator):
+                            await coordinator.async_reload_devices()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Automatic Tuya LAN recovery scan failed: %s", err)
 
     def _adjust_poll_interval(self) -> None:
         """Reducir frecuencia de poll si todos los dispositivos están unavailable.
@@ -283,6 +302,18 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.hass,
             self._handle_discovered_device
         )
+        domain_data = self.hass.data.setdefault(DOMAIN, {})
+        discovery_owner = domain_data.get("_lan_discovery_owner")
+        if discovery_owner in (None, self.entry.entry_id) and self._periodic_discovery_unsub is None:
+            domain_data["_lan_discovery_owner"] = self.entry.entry_id
+            async def _periodic_lan_discovery(_now) -> None:
+                await self._async_recover_lan_addresses(proactive=True)
+
+            self._periodic_discovery_unsub = async_track_time_interval(
+                self.hass,
+                _periodic_lan_discovery,
+                timedelta(seconds=DEFAULT_DISCOVERY_INTERVAL),
+            )
 
     def _handle_discovered_device(self, device_id: str, ip: str, version: str) -> None:
         """Callback para manejar el descubrimiento de un dispositivo."""
@@ -319,6 +350,11 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_reload_devices()
 
     async def async_shutdown(self) -> None:
+        if self._periodic_discovery_unsub is not None:
+            self._periodic_discovery_unsub()
+            self._periodic_discovery_unsub = None
+            if self.hass.data.get(DOMAIN, {}).get("_lan_discovery_owner") == self.entry.entry_id:
+                self.hass.data[DOMAIN].pop("_lan_discovery_owner", None)
         for transport in self._udp_transports:
             try:
                 transport.close()
