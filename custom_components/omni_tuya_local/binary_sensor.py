@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
+from .dps import discovered_dps
 from .entity import OmniTuyaEntity
 
 # ── Mapeo device_type → BinarySensorDeviceClass ──────────────────────────────
@@ -82,12 +83,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             device_domain = config.get("domain")
             device_type = config.get("device_type") or ""
 
-            # Permitir crear binary_sensors si el dominio principal es binary_sensor O si es un alarm_kit
-            if device_domain != "binary_sensor" and device_type != "alarm_kit":
-                continue
-
-            device_type = config.get("device_type") or ""
-
+            # Keep the dedicated primary entities for binary-sensor products
+            # and alarm kits, then add LAN-discovered booleans below for every
+            # other product type as read-only entities.
             if device_type == "alarm_kit":
                 # Crear una entidad binary_sensor por cada DPS del alarm_kit
                 for dps_id, sensor_name, device_class, suffix in _ALARM_KIT_SENSORS:
@@ -99,11 +97,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                 coordinator, config, dps_id, sensor_name, device_class, suffix
                             )
                         )
-            else:
+            elif device_domain == "binary_sensor":
                 uid = f"{DOMAIN}_{config['device_id']}"
                 if uid not in _known_unique_ids:
                     _known_unique_ids.add(uid)
                     entities.append(OmniTuyaBinarySensor(coordinator, config))
+
+            if device_type == "alarm_kit":
+                continue
+
+            # Show every boolean DPS observed over LAN as a read-only binary
+            # sensor.  The primary binary sensor above keeps its existing
+            # stable unique_id, so it is not duplicated here.
+            for dps_id, info in discovered_dps(config).items():
+                if info["kind"] != "boolean":
+                    continue
+                if device_domain == "binary_sensor" and dps_id == "1":
+                    continue
+                if dps_id == "1" and device_domain in {
+                    "switch", "light", "fan", "cover", "climate", "lock",
+                    "vacuum", "humidifier", "alarm_control_panel",
+                }:
+                    continue
+                uid = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}_binary"
+                if uid not in _known_unique_ids:
+                    _known_unique_ids.add(uid)
+                    entities.append(
+                        OmniTuyaDiscoveredBinarySensor(
+                            coordinator, config, dps_id, info["name"]
+                        )
+                    )
 
         if entities:
             async_add_entities(entities)
@@ -138,6 +161,27 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
             return value
         return str(value).lower() in {"1", "true", "on", "open", "motion", "detected",
                                        "wet", "smoke", "gas", "alarm"}
+
+
+class OmniTuyaDiscoveredBinarySensor(OmniTuyaEntity, BinarySensorEntity):
+    """A safely observed boolean DPS not covered by the primary platform."""
+
+    def __init__(
+        self, coordinator: OmniTuyaLocalCoordinator, config: dict,
+        dps_id: str, name: str,
+    ) -> None:
+        super().__init__(coordinator, config, dps_id)
+        self._attr_unique_id = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}_binary"
+        self._attr_name = name
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self.dps(self.dps_id)
+        if value is None:
+            return None
+        return value is True or str(value).lower() in {
+            "1", "true", "on", "open", "motion", "detected", "wet", "smoke", "gas", "alarm",
+        }
 
 
 class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
@@ -175,10 +219,11 @@ class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):
             push_time = self.dps(f"_push_time_{self.dps_id}")
             
             if value is not None and push_time is not None and push_time > self._last_trigger_time:
-                # Al ser un evento efímero (o incluso si tiene un reset posterior rápido),
-                # cualquier señal push recibida en 101/106 significa que el sensor se activó.
-                # Esto ignora si el fabricante manda True o False.
-                is_triggered = True
+                is_triggered = False
+                if isinstance(value, bool):
+                    is_triggered = not value
+                else:
+                    is_triggered = str(value).lower() in {"0", "false", "off", "closed"}
                     
                 if is_triggered:
                     self._last_trigger_time = push_time

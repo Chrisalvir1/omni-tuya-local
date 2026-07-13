@@ -68,7 +68,12 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
 
     @property
     def _supports_hs_color(self) -> bool:
-        return self._has_dps(DPS_HSV)
+        if not self._has_dps(DPS_HSV):
+            return False
+        raw = self.dps(DPS_HSV)
+        if raw is not None and not isinstance(raw, str):
+            return False
+        return True
 
     @property
     def _brightness_dps(self) -> str | None:
@@ -95,7 +100,13 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
 
     @property
     def _supports_color_temp(self) -> bool:
-        return self._has_dps(DPS_COLOR_TEMP)
+        if not self._has_dps(DPS_COLOR_TEMP):
+            return False
+        raw = self.dps(DPS_COLOR_TEMP)
+        if raw is not None:
+            if isinstance(raw, str) and not raw.isdigit():
+                return False
+        return True
 
     @property
     def supported_color_modes(self) -> set[ColorMode]:
