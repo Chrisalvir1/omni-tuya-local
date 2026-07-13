@@ -62,7 +62,8 @@
     "abort": {
       "already_configured": "This device is already configured.",
       "unique_id_mismatch": "Device ID does not match.",
-      "bulk_import_done": "Sync complete. {added} new devices were added."
+      "bulk_import_done": "Sync complete. {added} new devices were added.",
+      "sync_complete": "Sync complete. Devices and entities were reloaded."
     }
   },
   "options": {
@@ -85,13 +86,19 @@
           "domain": "Export as entity",
           "device_type": "Physical device type"
         }
+      },
+      "sync_cloud": {
+        "title": "Sync Tuya Cloud",
+        "description": "Press Submit. Omni will find new devices and update names, local keys, and metadata; this window waits for the result."
       }
     },
     "error": {
-      "invalid_ip": "Invalid IP address format (example: 192.168.1.100)."
+      "invalid_ip": "Invalid IP address format (example: 192.168.1.100).",
+      "cloud_error": "Could not sync with Tuya Cloud. Check Access ID, Access Secret, region, and the Smart Life link to the Tuya IoT project. See Home Assistant logs for details."
     },
     "abort": {
-      "no_devices": "No registered devices. Add one first from the integration setup or sync with Tuya Cloud."
+      "no_devices": "No registered devices. Add one first from the integration setup or sync with Tuya Cloud.",
+      "sync_complete": "Sync complete. Devices and entities were reloaded."
     }
   }
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -30,8 +31,11 @@ from .const import (
     DEVICE_TYPES,
     DOMAIN,
     EXPORT_DOMAINS,
+    SERVICE_SYNC_CLOUD,
 )
 from .cloud import async_fetch_cloud_devices
+
+_LOGGER = logging.getLogger(__name__)
 
 PROTOCOL_VERSIONS = ["auto", "3.1", "3.3", "3.4", "3.5"]
 PROTOCOL_VERSIONS_NO_AUTO = ["3.1", "3.3", "3.4", "3.5"]
@@ -383,43 +387,23 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ):
             return await self.async_step_cloud_credentials()
 
+        errors: dict[str, str] = {}
         if user_input is not None:
-            devices = await async_fetch_cloud_devices(
-                self.hass,
-                store.cloud_config[CONF_API_KEY],
-                store.cloud_config[CONF_API_SECRET],
-                store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
-                "",
-            )
-            devices = [device for device in devices if device.get(CONF_LOCAL_KEY)]
-            await store.add_many(devices)
-            entries_by_device_id = {
-                entry.data.get(CONF_DEVICE_ID): entry
-                for entry in self.hass.config_entries.async_entries(DOMAIN)
-            }
-            for device in devices:
-                entry = entries_by_device_id.get(device[CONF_DEVICE_ID])
-                if entry and device.get("name") and entry.title != device["name"]:
-                    self.hass.config_entries.async_update_entry(entry, title=device["name"])
-            existing_entries = set(entries_by_device_id)
-            new_devices = [device for device in devices if device[CONF_DEVICE_ID] not in existing_entries]
-            for device in new_devices:
-                self.hass.async_create_task(
-                    self.hass.config_entries.flow.async_init(
-                        DOMAIN, context={"source": "import"}, data=device
-                    )
+            try:
+                if not self.hass.services.has_service(DOMAIN, SERVICE_SYNC_CLOUD):
+                    raise RuntimeError("Omni Tuya Local is not loaded yet")
+                await self.hass.services.async_call(
+                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True
                 )
-            for value in self.hass.data.get(DOMAIN, {}).values():
-                if hasattr(value, "async_reload_devices"):
-                    await value.async_reload_devices()
-            return self.async_abort(
-                reason="bulk_import_done",
-                description_placeholders={"added": str(len(new_devices))},
-            )
+                return self.async_abort(reason="sync_complete")
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Tuya Cloud sync from config flow failed: %s", err)
+                errors["base"] = "cloud_error"
 
         return self.async_show_form(
             step_id="sync_cloud",
             description_placeholders={},
+            errors=errors,
         )
 
     @staticmethod
@@ -617,16 +601,22 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def async_step_sync_cloud(self, user_input: dict[str, Any] | None = None):
-        """Disparar sincronización manual con la nube sin modificar credenciales."""
+        """Synchronize cloud data and keep the options UI responsive."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self.hass.async_create_task(
-                self.hass.services.async_call(DOMAIN, "sync_cloud", {})
-            )
-            return self.async_create_entry(title="", data={})
+            try:
+                await self.hass.services.async_call(
+                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True
+                )
+                return self.async_create_entry(title="", data={})
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Tuya Cloud sync from options flow failed: %s", err)
+                errors["base"] = "cloud_error"
 
         return self.async_show_form(
             step_id="sync_cloud",
             description_placeholders={},
+            errors=errors,
         )
 
 

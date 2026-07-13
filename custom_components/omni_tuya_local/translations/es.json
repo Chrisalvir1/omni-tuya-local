@@ -62,7 +62,8 @@
     "abort": {
       "already_configured": "Este dispositivo ya está configurado.",
       "unique_id_mismatch": "El ID del dispositivo no coincide.",
-      "bulk_import_done": "Sincronización terminada. Se agregaron {added} dispositivos nuevos."
+      "bulk_import_done": "Sincronización terminada. Se agregaron {added} dispositivos nuevos.",
+      "sync_complete": "Sincronización terminada. Los dispositivos y entidades se recargaron."
     }
   },
   "options": {
@@ -85,13 +86,19 @@
           "domain": "Exportar como entidad",
           "device_type": "Tipo real del dispositivo"
         }
+      },
+      "sync_cloud": {
+        "title": "Sincronizar Tuya Cloud",
+        "description": "Presiona Enviar. Omni buscará dispositivos nuevos y actualizará nombres, local keys y metadatos; la ventana esperará el resultado."
       }
     },
     "error": {
-      "invalid_ip": "La dirección IP no tiene formato válido (ejemplo: 192.168.1.100)."
+      "invalid_ip": "La dirección IP no tiene formato válido (ejemplo: 192.168.1.100).",
+      "cloud_error": "No se pudo sincronizar con Tuya Cloud. Revisa Access ID, Access Secret, región y la vinculación de Smart Life con el proyecto Tuya IoT. Consulta los registros de Home Assistant para el detalle."
     },
     "abort": {
-      "no_devices": "No hay dispositivos registrados. Agrega uno primero desde la configuración o sincroniza con Tuya Cloud."
+      "no_devices": "No hay dispositivos registrados. Agrega uno primero desde la configuración o sincroniza con Tuya Cloud.",
+      "sync_complete": "Sincronización terminada. Los dispositivos y entidades se recargaron."
     }
   }
 }

@@ -195,6 +195,14 @@ def _coordinator(hass: HomeAssistant, entry_id: str) -> OmniTuyaLocalCoordinator
     return hass.data[DOMAIN][entry_id]
 
 
+def _coordinators(hass: HomeAssistant) -> list[OmniTuyaLocalCoordinator]:
+    """Return only config-entry coordinators, excluding integration state."""
+    return [
+        value for value in hass.data.get(DOMAIN, {}).values()
+        if isinstance(value, OmniTuyaLocalCoordinator)
+    ]
+
+
 class _ScopedTuyaDeviceStore:
     """Expone un único dispositivo almacenado a una config entry por dispositivo."""
 
@@ -293,7 +301,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
                 added += 1
 
         if added > 0:
-            for coord in hass.data[DOMAIN].values():
+            for coord in _coordinators(hass):
                 await coord.async_reload_devices()
 
         return {"found": len(found), "updated": added, "devices": found}
@@ -342,7 +350,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
                 )
 
         # Recargar todos los coordinadores
-        for coord in hass.data[DOMAIN].values():
+        for coord in _coordinators(hass):
             await coord.async_reload_devices()
 
         return {"imported": len(imported), "devices": imported}
