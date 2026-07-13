@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="Omni Tuya Local" width="180"/>
+  <img src="https://raw.githubusercontent.com/Chrisalvir1/omni-tuya-local/main/logo.png" alt="Omni Tuya Local" width="180"/>
 </p>
 
 <h1 align="center">Omni Tuya Local</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.5.42-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-0.5.43-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
