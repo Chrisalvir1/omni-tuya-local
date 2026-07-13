@@ -63,7 +63,7 @@
       "already_configured": "Este dispositivo ya está configurado.",
       "unique_id_mismatch": "El ID del dispositivo no coincide.",
       "bulk_import_done": "Sincronización terminada. Se agregaron {added} dispositivos nuevos.",
-      "sync_complete": "Sincronización terminada. Los dispositivos y entidades se recargaron."
+      "sync_complete": "Sincronización terminada. Se encontraron {found} dispositivos: {new} nuevos y {updated} actualizados.\n\nNuevos: {new_names}\nActualizados: {updated_names}\n\nLas nuevas entradas se están agregando y las entidades se recargaron."
     }
   },
   "options": {
@@ -98,7 +98,7 @@
     },
     "abort": {
       "no_devices": "No hay dispositivos registrados. Agrega uno primero desde la configuración o sincroniza con Tuya Cloud.",
-      "sync_complete": "Sincronización terminada. Los dispositivos y entidades se recargaron."
+      "sync_complete": "Sincronización terminada. Se encontraron {found} dispositivos: {new} nuevos y {updated} actualizados.\n\nNuevos: {new_names}\nActualizados: {updated_names}\n\nLas nuevas entradas se están agregando y las entidades se recargaron."
     }
   }
 }

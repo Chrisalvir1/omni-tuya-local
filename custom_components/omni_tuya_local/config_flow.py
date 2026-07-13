@@ -37,6 +37,21 @@ from .cloud import async_fetch_cloud_devices
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _sync_result_placeholders(result: dict[str, Any] | None) -> dict[str, str]:
+    """Make a compact, user-facing summary from the sync service response."""
+    result = result or {}
+    new_names = [str(item.get("name") or item.get("device_id")) for item in result.get("new_devices", [])]
+    updated_names = [str(item.get("name") or item.get("device_id")) for item in result.get("updated_devices", [])]
+    return {
+        "found": str(result.get("found", 0)),
+        "new": str(result.get("new", 0)),
+        "updated": str(result.get("updated", 0)),
+        "unchanged": str(result.get("unchanged", 0)),
+        "new_names": ", ".join(new_names[:5]) or "Ninguno",
+        "updated_names": ", ".join(updated_names[:5]) or "Ninguno",
+    }
+
 PROTOCOL_VERSIONS = ["auto", "3.1", "3.3", "3.4", "3.5"]
 PROTOCOL_VERSIONS_NO_AUTO = ["3.1", "3.3", "3.4", "3.5"]
 
@@ -392,10 +407,14 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 if not self.hass.services.has_service(DOMAIN, SERVICE_SYNC_CLOUD):
                     raise RuntimeError("Omni Tuya Local is not loaded yet")
-                await self.hass.services.async_call(
-                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True
+                result = await self.hass.services.async_call(
+                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True,
+                    return_response=True,
                 )
-                return self.async_abort(reason="sync_complete")
+                return self.async_abort(
+                    reason="sync_complete",
+                    description_placeholders=_sync_result_placeholders(result),
+                )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.exception("Tuya Cloud sync from config flow failed: %s", err)
                 errors["base"] = "cloud_error"
@@ -605,10 +624,14 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                await self.hass.services.async_call(
-                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True
+                result = await self.hass.services.async_call(
+                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True,
+                    return_response=True,
                 )
-                return self.async_create_entry(title="", data={})
+                return self.async_abort(
+                    reason="sync_complete",
+                    description_placeholders=_sync_result_placeholders(result),
+                )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.exception("Tuya Cloud sync from options flow failed: %s", err)
                 errors["base"] = "cloud_error"

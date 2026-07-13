@@ -63,7 +63,7 @@
       "already_configured": "This device is already configured.",
       "unique_id_mismatch": "Device ID does not match.",
       "bulk_import_done": "Sync complete. {added} new devices were added.",
-      "sync_complete": "Sync complete. Devices and entities were reloaded."
+      "sync_complete": "Sync complete. Found {found} devices: {new} new and {updated} updated.\n\nNew: {new_names}\nUpdated: {updated_names}\n\nNew entries are being added and entities were reloaded."
     }
   },
   "options": {
@@ -98,7 +98,7 @@
     },
     "abort": {
       "no_devices": "No registered devices. Add one first from the integration setup or sync with Tuya Cloud.",
-      "sync_complete": "Sync complete. Devices and entities were reloaded."
+      "sync_complete": "Sync complete. Found {found} devices: {new} new and {updated} updated.\n\nNew: {new_names}\nUpdated: {updated_names}\n\nNew entries are being added and entities were reloaded."
     }
   }
 }

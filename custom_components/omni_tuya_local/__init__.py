@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from datetime import timedelta
 from typing import Any
@@ -322,7 +323,18 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
             cloud_config.get(CONF_REGION, DEFAULT_REGION),
             cloud_config.get(CONF_DEVICE_ID, ""),
         )
+        before_sync = copy.deepcopy(store.all())
         imported = await store.add_many(devices)
+
+        new_inventory_ids = [
+            device[CONF_DEVICE_ID] for device in imported
+            if device[CONF_DEVICE_ID] not in before_sync
+        ]
+        updated_inventory_ids = [
+            device[CONF_DEVICE_ID] for device in imported
+            if device[CONF_DEVICE_ID] in before_sync
+            and device != before_sync[device[CONF_DEVICE_ID]]
+        ]
 
         # Smart Life names are cloud metadata.  Keep the config-entry title in
         # sync too; otherwise the device card continues showing the old name
@@ -339,8 +351,10 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
 
         # Crear entrada para cada dispositivo nuevo
         existing_entries = set(entries_by_device_id)
+        new_entry_devices: list[dict[str, Any]] = []
         for dev in imported:
             if dev["device_id"] not in existing_entries:
+                new_entry_devices.append(dev)
                 hass.async_create_task(
                     hass.config_entries.flow.async_init(
                         DOMAIN,
@@ -353,7 +367,20 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         for coord in _coordinators(hass):
             await coord.async_reload_devices()
 
-        return {"imported": len(imported), "devices": imported}
+        return {
+            "found": len(devices),
+            "new": len(new_entry_devices),
+            "updated": len(updated_inventory_ids),
+            "unchanged": len(imported) - len(new_inventory_ids) - len(updated_inventory_ids),
+            "new_devices": [
+                {"device_id": device[CONF_DEVICE_ID], "name": device.get("name") or device[CONF_DEVICE_ID]}
+                for device in new_entry_devices
+            ],
+            "updated_devices": [
+                {"device_id": device_id, "name": (store.get(device_id) or {}).get("name") or device_id}
+                for device_id in updated_inventory_ids
+            ],
+        }
 
     # Refreshing the cloud is only for metadata (new devices, names and local
     # keys).  Device control remains fully local.  One timer for the whole
