@@ -34,7 +34,7 @@ from .const import (
     EXPORT_DOMAINS,
     SERVICE_SYNC_CLOUD,
 )
-from .cloud import async_fetch_cloud_devices
+from .cloud import async_fetch_cloud_devices, find_cloud_device_by_mac, normalize_mac
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -504,12 +504,15 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_update_cloud()
             if user_input["device_id"] == "sync_cloud":
                 return await self._async_sync_cloud_from_options()
+            if user_input["device_id"] == "find_cloud_mac":
+                return await self.async_step_find_cloud_mac()
             self._selected_device_id = user_input["device_id"]
             return await self.async_step_edit_device()
 
         device_options = {
             "sync_cloud": "🔄 Sincronizar nuevos dispositivos desde la Nube",
             "update_cloud": "🔑 Actualizar Credenciales de la Nube (API Key / Secret)",
+            "find_cloud_mac": "🔎 Buscar e importar un dispositivo nuevo por MAC",
         }
         device_options.update({
             dev_id: "{name}  ·  IP: {ip}  ·  v{ver}".format(
@@ -524,6 +527,72 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema({vol.Required("device_id"): vol.In(device_options)}),
             description_placeholders={"count": str(len(self._devices))},
+        )
+
+    async def async_step_find_cloud_mac(self, user_input: dict[str, Any] | None = None):
+        """Import a not-yet-configured Tuya device by its physical MAC."""
+        from .storage import TuyaDeviceStore
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            mac = normalize_mac(user_input.get("mac"))
+            if not mac:
+                errors["base"] = "invalid_mac"
+            else:
+                store = TuyaDeviceStore(self.hass)
+                await store.async_load()
+                cloud_config = store.cloud_config
+                if not cloud_config.get(CONF_API_KEY) or not cloud_config.get(CONF_API_SECRET):
+                    errors["base"] = "cloud_credentials_missing"
+                else:
+                    try:
+                        devices = await async_fetch_cloud_devices(
+                            self.hass,
+                            cloud_config[CONF_API_KEY],
+                            cloud_config[CONF_API_SECRET],
+                            cloud_config.get(CONF_REGION, DEFAULT_REGION),
+                            cloud_config.get(CONF_DEVICE_ID, ""),
+                        )
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.exception("Tuya cloud MAC lookup failed: %s", err)
+                        errors["base"] = "cloud_error"
+                    else:
+                        device = find_cloud_device_by_mac(devices, mac)
+                        if device is None:
+                            errors["base"] = "mac_not_found"
+                        elif not device.get(CONF_LOCAL_KEY):
+                            errors["base"] = "no_devices"
+                        else:
+                            imported = await store.add_many([device])
+                            saved = imported[0]
+                            existing_ids = {
+                                entry.data.get(CONF_DEVICE_ID)
+                                for entry in self.hass.config_entries.async_entries(DOMAIN)
+                            }
+                            if saved[CONF_DEVICE_ID] not in existing_ids:
+                                self.hass.async_create_task(
+                                    self.hass.config_entries.flow.async_init(
+                                        DOMAIN, context={"source": "import"}, data=saved,
+                                    )
+                                )
+                            persistent_notification.async_create(
+                                self.hass,
+                                "Dispositivo encontrado e importado desde Tuya Cloud.\n\n"
+                                f"- Nombre: **{saved.get('name')}**\n"
+                                f"- ID: `{saved.get(CONF_DEVICE_ID)}`\n"
+                                f"- MAC: `{saved.get('mac') or user_input.get('mac')}`\n"
+                                f"- Modelo: {saved.get('product_name') or 'Tuya'}\n"
+                                f"- Tipo HA: {saved.get('domain') or 'switch'}\n\n"
+                                "La entrada y sus entidades se están creando.",
+                                title="Omni Tuya Local — Dispositivo importado por MAC",
+                                notification_id=f"{DOMAIN}_mac_import",
+                            )
+                            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="find_cloud_mac",
+            data_schema=vol.Schema({vol.Required("mac"): str}),
+            errors=errors,
         )
 
     async def async_step_edit_device(self, user_input: dict[str, Any] | None = None):

@@ -11,6 +11,25 @@ from .pet_feeder import function_id
 _LOGGER = logging.getLogger(__name__)
 
 
+def normalize_mac(value: Any) -> str:
+    """Return a MAC in a comparable form, or an empty string if invalid."""
+    compact = "".join(char for char in str(value or "").lower() if char in "0123456789abcdef")
+    return compact if len(compact) == 12 else ""
+
+
+def find_cloud_device_by_mac(devices: list[dict[str, Any]], mac: str) -> dict[str, Any] | None:
+    """Find a cloud device regardless of MAC punctuation or casing."""
+    wanted = normalize_mac(mac)
+    if not wanted:
+        return None
+    for device in devices:
+        raw = device.get("raw") or {}
+        candidates = (device.get("mac"), raw.get("mac"), raw.get("mac_address"))
+        if any(normalize_mac(candidate) == wanted for candidate in candidates):
+            return device
+    return None
+
+
 async def async_fetch_cloud_devices(
     hass: HomeAssistant,
     api_key: str,

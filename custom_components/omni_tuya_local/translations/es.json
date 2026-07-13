@@ -99,6 +99,13 @@
           "device_id": "ID virtual de Smart Life (recomendado)"
         }
       },
+      "find_cloud_mac": {
+        "title": "Buscar dispositivo Tuya por MAC",
+        "description": "Pega la MAC física del dispositivo. Omni la buscará en Tuya Cloud, recuperará la local key y los metadatos, y lo importará a Home Assistant.",
+        "data": {
+          "mac": "Dirección MAC"
+        }
+      },
       "sync_cloud": {
         "title": "Sincronizar Tuya Cloud",
         "description": "Presiona Enviar. Omni buscará dispositivos nuevos y actualizará nombres, local keys y metadatos; la ventana esperará el resultado."
@@ -106,7 +113,10 @@
     },
     "error": {
       "invalid_ip": "La dirección IP no tiene formato válido (ejemplo: 192.168.1.100).",
-      "cloud_error": "No se pudo sincronizar con Tuya Cloud. Revisa Access ID, Access Secret, región y la vinculación de Smart Life con el proyecto Tuya IoT. Consulta los registros de Home Assistant para el detalle."
+      "cloud_error": "No se pudo sincronizar con Tuya Cloud. Revisa Access ID, Access Secret, región y la vinculación de Smart Life con el proyecto Tuya IoT. Consulta los registros de Home Assistant para el detalle.",
+      "invalid_mac": "La MAC debe tener 12 caracteres hexadecimales, por ejemplo 38:2c:e5:de:4a:3a.",
+      "mac_not_found": "No se encontró esa MAC en la cuenta vinculada de Tuya Cloud. Confirma que la cuenta Smart Life está vinculada al proyecto IoT y que la MAC es la del dispositivo.",
+      "cloud_credentials_missing": "Primero guarda Access ID, Access Secret, región e ID virtual en Actualizar credenciales de la nube."
     },
     "abort": {
       "no_devices": "No hay dispositivos registrados. Agrega uno primero desde la configuración o sincroniza con Tuya Cloud.",
