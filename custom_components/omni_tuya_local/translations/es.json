@@ -10,11 +10,12 @@
       },
       "cloud_credentials": {
         "title": "Credenciales Tuya IoT",
-        "description": "Ingresa tu Access ID, Access Secret y región de Tuya IoT Platform. Solo se usan para listar dispositivos y obtener local keys.",
+        "description": "Ingresa tu Access ID, Access Secret y región de Tuya IoT Platform. Si Tuya no devuelve tus dispositivos, agrega el ID virtual de cualquier dispositivo de Smart Life; así se identifica la cuenta vinculada.",
         "data": {
           "region": "Región",
           "api_key": "Access ID (API Key)",
-          "api_secret": "Access Secret (API Secret)"
+          "api_secret": "Access Secret (API Secret)",
+          "device_id": "ID virtual de Smart Life (recomendado)"
         }
       },
       "choose_cloud_device": {
@@ -63,7 +64,8 @@
       "already_configured": "Este dispositivo ya está configurado.",
       "unique_id_mismatch": "El ID del dispositivo no coincide.",
       "bulk_import_done": "Sincronización terminada. Se agregaron {added} dispositivos nuevos.",
-      "sync_complete": "Sincronización terminada. Se encontraron {found} dispositivos: {new} nuevos y {updated} actualizados.\n\nNuevos: {new_names}\nActualizados: {updated_names}\n\nLas nuevas entradas se están agregando y las entidades se recargaron."
+      "sync_complete": "Sincronización terminada. Se encontraron {found} dispositivos: {new} nuevos y {updated} actualizados.\n\nNuevos: {new_names}\nActualizados: {updated_names}\n\nLas nuevas entradas se están agregando y las entidades se recargaron.",
+      "sync_failed": "No se pudo sincronizar con Tuya Cloud. Revisa los registros de Home Assistant para el detalle y confirma las credenciales, región y vinculación de Smart Life."
     }
   },
   "options": {
@@ -98,7 +100,8 @@
     },
     "abort": {
       "no_devices": "No hay dispositivos registrados. Agrega uno primero desde la configuración o sincroniza con Tuya Cloud.",
-      "sync_complete": "Sincronización terminada. Se encontraron {found} dispositivos: {new} nuevos y {updated} actualizados.\n\nNuevos: {new_names}\nActualizados: {updated_names}\n\nLas nuevas entradas se están agregando y las entidades se recargaron."
+      "sync_complete": "Sincronización terminada. Se encontraron {found} dispositivos: {new} nuevos y {updated} actualizados.\n\nNuevos: {new_names}\nActualizados: {updated_names}\n\nLas nuevas entradas se están agregando y las entidades se recargaron.",
+      "sync_failed": "No se pudo sincronizar con Tuya Cloud. Revisa los registros de Home Assistant para el detalle y confirma las credenciales, región y vinculación de Smart Life."
     }
   }
 }

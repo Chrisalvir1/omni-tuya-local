@@ -25,7 +25,10 @@ async def async_fetch_cloud_devices(
             apiRegion=api_region,
             apiKey=api_key,
             apiSecret=api_secret,
-            devId=device_id or None,
+            # TinyTuya expects apiDeviceID.  Passing the historical ``devId``
+            # spelling is silently accepted through **extrakw but ignored,
+            # which can make getdevices resolve the wrong Smart Life account.
+            apiDeviceID=device_id or None,
         )
         devices = cloud.getdevices()
         if isinstance(devices, list):
@@ -74,6 +77,9 @@ async def async_fetch_cloud_devices(
         feeder_mapping = _pet_feeder_mapping(functions)
         formatted.append({
             "device_id": raw.get("id"),
+            "cloud_id": raw.get("id") or "",
+            "uuid": raw.get("uuid") or raw.get("local_id") or "",
+            "mac": raw.get("mac") or raw.get("mac_address") or "",
             "local_key": raw.get("key") or "",
             "host": raw.get("ip") or "",
             "ip": raw.get("ip") or "",

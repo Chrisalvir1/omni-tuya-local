@@ -10,11 +10,12 @@
       },
       "cloud_credentials": {
         "title": "Tuya IoT Credentials",
-        "description": "Enter your Tuya IoT Platform Access ID, Access Secret, and region. Only used to list devices and fetch local keys.",
+        "description": "Enter your Tuya IoT Platform Access ID, Access Secret, and region. If Tuya does not return your devices, add the virtual ID of any Smart Life device so the linked account can be identified.",
         "data": {
           "region": "Region",
           "api_key": "Access ID (API Key)",
-          "api_secret": "Access Secret"
+          "api_secret": "Access Secret",
+          "device_id": "Smart Life virtual ID (recommended)"
         }
       },
       "choose_cloud_device": {
@@ -63,7 +64,8 @@
       "already_configured": "This device is already configured.",
       "unique_id_mismatch": "Device ID does not match.",
       "bulk_import_done": "Sync complete. {added} new devices were added.",
-      "sync_complete": "Sync complete. Found {found} devices: {new} new and {updated} updated.\n\nNew: {new_names}\nUpdated: {updated_names}\n\nNew entries are being added and entities were reloaded."
+      "sync_complete": "Sync complete. Found {found} devices: {new} new and {updated} updated.\n\nNew: {new_names}\nUpdated: {updated_names}\n\nNew entries are being added and entities were reloaded.",
+      "sync_failed": "Could not sync with Tuya Cloud. Check the Home Assistant logs and confirm the credentials, region, and Smart Life link."
     }
   },
   "options": {
@@ -98,7 +100,8 @@
     },
     "abort": {
       "no_devices": "No registered devices. Add one first from the integration setup or sync with Tuya Cloud.",
-      "sync_complete": "Sync complete. Found {found} devices: {new} new and {updated} updated.\n\nNew: {new_names}\nUpdated: {updated_names}\n\nNew entries are being added and entities were reloaded."
+      "sync_complete": "Sync complete. Found {found} devices: {new} new and {updated} updated.\n\nNew: {new_names}\nUpdated: {updated_names}\n\nNew entries are being added and entities were reloaded.",
+      "sync_failed": "Could not sync with Tuya Cloud. Check the Home Assistant logs and confirm the credentials, region, and Smart Life link."
     }
   }
 }

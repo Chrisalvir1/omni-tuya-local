@@ -103,21 +103,26 @@ class TuyaDeviceStore:
                     if not dev_id or not str(dev_id).strip():
                         _LOGGER.warning("Skipping device with empty device_id during bulk import")
                         continue
-                    # Merge if exists
-                    if dev_id in self._devices:
-                        existing = self._devices[dev_id]
+                    # Merge if exists. Smart Life may call the same physical
+                    # device by a virtual/cloud ID while LAN discovery reports
+                    # a gwId. Match their stable aliases before creating a
+                    # duplicate device or ignoring a renamed device.
+                    existing_id = self._matching_device_id(normalized)
+                    if existing_id:
+                        existing = self._devices[existing_id]
                         # Cloud data may refresh the local key and product schema,
                         # but it must never discard local IP/discovery state or the
                         # user's persisted serving preference.
                         for key in (
                             "name", "local_key", "version", "product_name", "product_id",
                             "category", "category_name", "tuya_functions",
+                            "cloud_id", "uuid", "mac",
                             "pet_feeder_feed_dp", "pet_feeder_feed_kind",
                             "pet_feeder_clean_hopper_dp", "pet_feeder_clean_hopper_value",
                         ):
                             if normalized.get(key) not in (None, "", [], {}):
                                 existing[key] = normalized[key]
-                        self._devices[dev_id] = existing
+                        self._devices[existing_id] = existing
                         imported.append(existing)
                     else:
                         self._devices[dev_id] = normalized
@@ -127,6 +132,32 @@ class TuyaDeviceStore:
             if imported:
                 await self.async_save()
             return imported
+
+    def _matching_device_id(self, incoming: dict) -> str | None:
+        """Find a stored device using direct or cloud/LAN stable identities."""
+        direct_id = str(incoming.get("device_id") or "")
+        if direct_id in self._devices:
+            return direct_id
+
+        def _identities(config: dict) -> set[str]:
+            return {
+                str(value).strip().lower()
+                for value in (
+                    config.get("device_id"), config.get("cloud_id"),
+                    config.get("uuid"), config.get("mac"), config.get("local_key"),
+                )
+                if value and str(value).strip()
+            }
+
+        incoming_ids = _identities(incoming)
+        for stored_id, stored in self._devices.items():
+            if incoming_ids.intersection(_identities(stored)):
+                _LOGGER.info(
+                    "Matched Tuya cloud identity %s to stored LAN device %s",
+                    direct_id or "?", stored_id,
+                )
+                return stored_id
+        return None
 
     async def remove(self, device_id: str) -> bool:
         if not device_id:

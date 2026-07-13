@@ -8,6 +8,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.components import persistent_notification
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
@@ -52,6 +53,18 @@ def _sync_result_placeholders(result: dict[str, Any] | None) -> dict[str, str]:
         "updated_names": ", ".join(updated_names[:5]) or "Ninguno",
     }
 
+
+def _sync_result_message(result: dict[str, Any] | None) -> str:
+    """Human-readable result shown after an Options Flow has closed."""
+    values = _sync_result_placeholders(result)
+    return (
+        f"Se encontraron **{values['found']}** dispositivos.\n\n"
+        f"- Nuevos: **{values['new']}** — {values['new_names']}\n"
+        f"- Actualizados: **{values['updated']}** — {values['updated_names']}\n"
+        f"- Sin cambios: **{values['unchanged']}**\n\n"
+        "Las nuevas entradas se están agregando y las entidades se recargaron."
+    )
+
 PROTOCOL_VERSIONS = ["auto", "3.1", "3.3", "3.4", "3.5"]
 PROTOCOL_VERSIONS_NO_AUTO = ["3.1", "3.3", "3.4", "3.5"]
 
@@ -95,7 +108,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             store.cloud_config[CONF_API_KEY],
                             store.cloud_config[CONF_API_SECRET],
                             store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
-                            "",
+                            store.cloud_config.get(CONF_DEVICE_ID, ""),
                         )
                         self._cloud_devices = [d for d in devices if d.get(CONF_LOCAL_KEY)]
                         if self._cloud_devices:
@@ -103,6 +116,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_REGION: store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
                                 CONF_API_KEY: store.cloud_config[CONF_API_KEY],
                                 CONF_API_SECRET: store.cloud_config[CONF_API_SECRET],
+                                CONF_DEVICE_ID: store.cloud_config.get(CONF_DEVICE_ID, ""),
                             }
                             return await self.async_step_choose_cloud_device()
                     except Exception as _err:  # noqa: BLE001
@@ -113,7 +127,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 return await self.async_step_cloud_credentials()
             if mode == "sync_cloud":
-                return await self.async_step_sync_cloud()
+                return await self._async_sync_cloud_from_config_flow()
             if mode == "manual_device":
                 return await self.async_step_local_device()
 
@@ -161,7 +175,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input[CONF_API_KEY],
                     user_input[CONF_API_SECRET],
                     user_input.get(CONF_REGION, DEFAULT_REGION),
-                    "",
+                    user_input.get(CONF_DEVICE_ID, ""),
                 )
                 self._cloud_devices = [d for d in devices if d.get(CONF_LOCAL_KEY)]
                 if not devices:
@@ -183,6 +197,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
         current_api_key = store.cloud_config.get(CONF_API_KEY, "")
         current_api_secret = store.cloud_config.get(CONF_API_SECRET, "")
+        current_device_id = store.cloud_config.get(CONF_DEVICE_ID, "")
 
         schema = vol.Schema(
             {
@@ -199,6 +214,7 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Required(CONF_API_KEY, default=current_api_key): str,
                 vol.Required(CONF_API_SECRET, default=current_api_secret): str,
+                vol.Optional(CONF_DEVICE_ID, default=current_device_id): str,
             }
         )
         return self.async_show_form(
@@ -213,11 +229,17 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             from .storage import TuyaDeviceStore
             store = TuyaDeviceStore(self.hass)
             await store.async_load()
-            store.cloud_config.update({
+            cloud_config = {
                 CONF_API_KEY: self._device_data[CONF_API_KEY],
                 CONF_API_SECRET: self._device_data[CONF_API_SECRET],
-                CONF_REGION: self._device_data.get(CONF_REGION, DEFAULT_REGION)
-            })
+                CONF_REGION: self._device_data.get(CONF_REGION, DEFAULT_REGION),
+            }
+            # TinyTuya uses this virtual/device ID to resolve the linked
+            # Smart Life account. It is not the LAN identifier of every
+            # device, so persist it only in the shared cloud configuration.
+            if self._device_data.get(CONF_DEVICE_ID):
+                cloud_config[CONF_DEVICE_ID] = self._device_data[CONF_DEVICE_ID]
+            store.cloud_config.update(cloud_config)
             await store.async_save()
 
         if user_input is not None:
@@ -425,6 +447,29 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def _async_sync_cloud_from_config_flow(self):
+        """Run sync immediately after the user selected it; no empty form."""
+        from .storage import TuyaDeviceStore
+
+        store = TuyaDeviceStore(self.hass)
+        await store.async_load()
+        if not (
+            store.cloud_config.get(CONF_API_KEY)
+            and store.cloud_config.get(CONF_API_SECRET)
+        ):
+            return await self.async_step_cloud_credentials()
+        try:
+            result = await self.hass.services.async_call(
+                DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True, return_response=True,
+            )
+            return self.async_abort(
+                reason="sync_complete",
+                description_placeholders=_sync_result_placeholders(result),
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Tuya Cloud sync from setup flow failed: %s", err)
+            return self.async_abort(reason="sync_failed")
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
@@ -458,7 +503,7 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
             if user_input["device_id"] == "update_cloud":
                 return await self.async_step_update_cloud()
             if user_input["device_id"] == "sync_cloud":
-                return await self.async_step_sync_cloud()
+                return await self._async_sync_cloud_from_options()
             self._selected_device_id = user_input["device_id"]
             return await self.async_step_edit_device()
 
@@ -585,6 +630,8 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
                 CONF_API_KEY: user_input[CONF_API_KEY],
                 CONF_API_SECRET: user_input[CONF_API_SECRET],
             })
+            if user_input.get(CONF_DEVICE_ID):
+                store.cloud_config[CONF_DEVICE_ID] = user_input[CONF_DEVICE_ID]
             await store.async_save()
             # Opcional: lanzar una sincronización aquí mismo
             self.hass.async_create_task(
@@ -595,6 +642,7 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
         current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
         current_api_key = store.cloud_config.get(CONF_API_KEY, "")
         current_api_secret = store.cloud_config.get(CONF_API_SECRET, "")
+        current_device_id = store.cloud_config.get(CONF_DEVICE_ID, "")
 
         schema = vol.Schema(
             {
@@ -611,6 +659,7 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Required(CONF_API_KEY, default=current_api_key): str,
                 vol.Required(CONF_API_SECRET, default=current_api_secret): str,
+                vol.Optional(CONF_DEVICE_ID, default=current_device_id): str,
             }
         )
         return self.async_show_form(
@@ -641,6 +690,29 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={},
             errors=errors,
         )
+
+    async def _async_sync_cloud_from_options(self):
+        """Sync on menu selection, then close Options Flow and notify result.
+
+        OptionsFlow is designed to finish through ``async_create_entry``.  An
+        empty confirmation form can be re-rendered by the frontend, which made
+        the old flow look like an endless Submit loop.
+        """
+        try:
+            result = await self.hass.services.async_call(
+                DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True, return_response=True,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Tuya Cloud sync from options menu failed: %s", err)
+            return self.async_abort(reason="sync_failed")
+
+        persistent_notification.async_create(
+            self.hass,
+            _sync_result_message(result),
+            title="Omni Tuya Local — Sincronización terminada",
+            notification_id=f"{DOMAIN}_cloud_sync",
+        )
+        return self.async_create_entry(title="", data={})
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

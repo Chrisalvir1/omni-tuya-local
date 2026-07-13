@@ -22,6 +22,9 @@ class TuyaDeviceConfig:
     device_id: str
     name: str
     local_key: str
+    cloud_id: str = ""
+    uuid: str = ""
+    mac: str = ""
     host: str = ""
     version: str = "3.3"
     domain: str = "switch"
@@ -54,6 +57,9 @@ class TuyaDeviceConfig:
             device_id=str(data.get("device_id") or data.get("id") or ""),
             name=str(data.get("name") or data.get("device_id") or "Tuya Device"),
             local_key=str(data.get("local_key") or data.get("key") or ""),
+            cloud_id=str(data.get("cloud_id") or data.get("id") or ""),
+            uuid=str(data.get("uuid") or data.get("local_id") or ""),
+            mac=str(data.get("mac") or data.get("mac_address") or "").lower(),
             host=str(data.get("host") or data.get("ip") or ""),
             version=str(data.get("version") or data.get("ver") or "3.3"),
             domain=str(data.get("domain") or guess_domain(data)),
@@ -85,6 +91,9 @@ class TuyaDeviceConfig:
             "device_id": self.device_id,
             "name": self.name,
             "local_key": self.local_key,
+            "cloud_id": self.cloud_id,
+            "uuid": self.uuid,
+            "mac": self.mac,
             "host": self.host,
             "ip": self.host,         # alias para compatibilidad
             "version": self.version,
