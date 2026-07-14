@@ -7,7 +7,7 @@
   "integration_type": "hub",
   "iot_class": "local_polling",
   "requirements": ["tinytuya==1.20.0"],
-  "version": "0.5.54",
+  "version": "0.5.55",
   "after_dependencies": ["network"],
   "quality_scale": "silver"
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from typing import Any
 
@@ -32,7 +33,13 @@ class OmniTuyaDevice:
         self.config = TuyaDeviceConfig.from_dict(config)
         self.device_id = self.config.device_id
         self._on_push = on_push
+        # The regular status polling client must never be shared with the
+        # persistent push listener.  A Tuya device has only one request/answer
+        # stream per socket; using ``status()`` and ``receive()`` concurrently
+        # on it can make the listener miss every event after the device has
+        # rebooted or briefly lost Wi-Fi.
         self._tuya = None
+        self._push_tuya = None
         self._available = False
         self._last_dps: dict[str, Any] = {}
         self._last_status_at: float = 0.0
@@ -45,6 +52,7 @@ class OmniTuyaDevice:
         self._probed_config_version: str = ""
         
         self._listening = False
+        self._push_reconnect_requested = threading.Event()
         if self.config.device_type == "alarm_kit":
             self._start_push_listener()
 
@@ -79,6 +87,7 @@ class OmniTuyaDevice:
         old_host = self.config.host
         old_version = self.config.version
         old_local_key = self.config.local_key
+        old_device_type = self.config.device_type
         
         self.config = TuyaDeviceConfig.from_dict(config)
         
@@ -96,6 +105,20 @@ class OmniTuyaDevice:
                 "Device %s config updated (IP: %s → %s, Ver: %s → %s), reconnecting",
                 self.device_id, old_host, self.config.host, old_version, self.config.version,
             )
+            # The listener owns a separate socket and must rebuild it with the
+            # new address/key/version too.  ``receive`` has a five-second
+            # timeout, so this is picked up promptly without touching a socket
+            # from a different thread.
+            self._push_reconnect_requested.set()
+
+        # A device may have been imported as generic and later corrected to
+        # alarm_kit from the integration service.  Start the listener at that
+        # moment instead of requiring a Home Assistant restart.
+        if self.config.device_type == "alarm_kit" and old_device_type != "alarm_kit":
+            self._start_push_listener()
+        elif old_device_type == "alarm_kit" and self.config.device_type != "alarm_kit":
+            self._listening = False
+            self._push_reconnect_requested.set()
 
     def _build_tuya(self, version: str | None = None):
         """Construir cliente TinyTuya. Siempre crea instancia nueva."""
@@ -408,12 +431,15 @@ class OmniTuyaDevice:
     def close(self) -> None:
         """Cerrar la conexión socket persistentemente abierta."""
         self._listening = False
-        if self._tuya:
+        self._push_reconnect_requested.set()
+        for client in (self._tuya, self._push_tuya):
             try:
-                self._tuya.close()
+                if client:
+                    client.close()
             except Exception:
                 pass
-            self._tuya = None
+        self._tuya = None
+        self._push_tuya = None
 
     def _start_push_listener(self) -> None:
         if not self._listening:
@@ -428,27 +454,35 @@ class OmniTuyaDevice:
 
     def _push_listener_loop(self) -> None:
         """Hilo dedicado (daemon) para escuchar eventos push TCP en tiempo real."""
-        import time
         while self._listening:
             if not self.config.has_host:
                 time.sleep(2)
                 continue
 
+            listener = None
             try:
-                # _get_or_build_tuya will create the device if None
-                dev = self._get_or_build_tuya()
-                dev.set_socketPersistent(True)
-                dev.set_socketTimeout(5.0)
+                # Consume the reconnect request for this attempt before the
+                # client is created.  A configuration update that happens
+                # while it is connecting must remain set for the next loop.
+                self._push_reconnect_requested.clear()
+                # Do not use ``self._tuya`` here: async_status() runs in an
+                # executor and may send a poll at the same instant.  Keeping
+                # this client private to the listener makes reconnecting after
+                # a power outage deterministic.
+                listener = self._build_tuya()
+                listener.set_socketPersistent(True)
+                listener.set_socketTimeout(5.0)
+                self._push_tuya = listener
 
                 # Enviar status inicial para forzar la apertura del socket
                 try:
-                    dev.status()
+                    listener.status()
                 except Exception:
                     pass
 
-                while self._listening:
+                while self._listening and not self._push_reconnect_requested.is_set():
                     try:
-                        data = dev.receive()
+                        data = listener.receive()
                         if data and isinstance(data, dict) and "dps" in data:
                             dps = data["dps"]
                             self._last_dps.update(dps)
@@ -464,8 +498,19 @@ class OmniTuyaDevice:
                     except Exception as err:
                         if self._listening:
                             _LOGGER.debug("Push listener error for %s: %s", self.device_id, err)
-                            self._invalidate_client()
                             break  # Reconstruir socket
             except Exception as err:
                 _LOGGER.debug("Push listener connect error for %s: %s", self.device_id, err)
-                time.sleep(5)
+            finally:
+                if listener:
+                    try:
+                        listener.close()
+                    except Exception:
+                        pass
+                if self._push_tuya is listener:
+                    self._push_tuya = None
+
+            # Do not busy-loop when a device is booting after a power outage.
+            # A requested configuration reconnect can proceed immediately.
+            if self._listening and not self._push_reconnect_requested.is_set():
+                time.sleep(2)
