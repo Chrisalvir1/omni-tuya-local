@@ -184,9 +184,52 @@ class OmniTuyaDevice:
         return None
 
     def _mark_online(self) -> None:
+        was_unavailable = not self._available
         self._available = True
         self._consecutive_failures = 0
         self._last_error_detail = ""
+        # A device can answer regular status requests again while its old
+        # persistent event socket is still half-open after a Wi-Fi/router
+        # outage. Recreate that socket as soon as LAN polling recovers so
+        # alarm PIR events do not remain silently disconnected until HA is
+        # restarted again.
+        if was_unavailable and self.config.device_type == "alarm_kit":
+            self._push_reconnect_requested.set()
+
+    @staticmethod
+    def _is_alarm_trigger_value(value: Any) -> bool:
+        """Return whether a solar-alarm PIR DPS value represents a trigger."""
+        if isinstance(value, bool):
+            return not value
+        return str(value).lower() in {"0", "false", "off", "closed"}
+
+    def _notify_polled_alarm_trigger(
+        self, previous: dict[str, Any], current: dict[str, Any]
+    ) -> None:
+        """Provide a safe fallback when an alarm's TCP push reconnects late.
+
+        DPS 101/106 report a short active-low pulse.  Normally the dedicated
+        push listener catches it, but after a network interruption some
+        devices resume answering ``status()`` before accepting a new push
+        socket.  A transition seen in the regular poll is still a real event.
+        Initial state is deliberately ignored to avoid creating a false motion
+        event every time Home Assistant starts.
+        """
+        if self.config.device_type != "alarm_kit" or self._on_push is None:
+            return
+        for dps_id in ("101", "106"):
+            if dps_id not in previous or dps_id not in current:
+                continue
+            if (
+                not self._is_alarm_trigger_value(previous[dps_id])
+                and self._is_alarm_trigger_value(current[dps_id])
+            ):
+                _LOGGER.debug(
+                    "Detected solar alarm PIR event for %s via status polling (DPS %s)",
+                    self.device_id,
+                    dps_id,
+                )
+                self._on_push(self.device_id, {dps_id: current[dps_id]})
 
     def _mark_failure(self, reason: Exception | str | None) -> None:
         """Apply availability hysteresis so brief Wi-Fi loss does not flap."""
@@ -258,9 +301,11 @@ class OmniTuyaDevice:
                         timeout=_TUYA_TIMEOUT,
                     )
                     if dps is not None:
+                        previous_dps = dict(self._last_dps)
                         self._last_dps.update(dps)
                         self._last_status_at = time.monotonic()
                         self._mark_online()
+                        self._notify_polled_alarm_trigger(previous_dps, dps)
                         return self.dps
                     raise ConnectionError(self._last_error_detail or "Empty or invalid status response")
                 except asyncio.TimeoutError as err:
@@ -299,9 +344,11 @@ class OmniTuyaDevice:
                     version, dps = probe
                     self._runtime_version = version
                     self._detected_protocol_version = version
+                    previous_dps = dict(self._last_dps)
                     self._last_dps.update(dps)
                     self._last_status_at = time.monotonic()
                     self._mark_online()
+                    self._notify_polled_alarm_trigger(previous_dps, dps)
                     _LOGGER.info(
                         "Device %s responded with Tuya protocol %s; saving detected version",
                         self.device_id, version,
