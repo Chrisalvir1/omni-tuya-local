@@ -20,7 +20,6 @@ _COMMAND_TIMEOUT = 4
 _MAX_STATUS_ATTEMPTS = 2
 # A single lost Wi-Fi packet must not flip every entity to unavailable.
 _UNAVAILABLE_AFTER_FAILURES = 3
-_PUSH_HEARTBEAT_INTERVAL = 12
 
 
 class OmniTuyaDevice:
@@ -184,7 +183,7 @@ class OmniTuyaDevice:
             _LOGGER.debug("Tuya device %s status returned empty response: %s", self.device_id, raw)
         return None
 
-    def _mark_online(self, reconnect_push: bool = True) -> None:
+    def _mark_online(self) -> None:
         was_unavailable = not self._available
         self._available = True
         self._consecutive_failures = 0
@@ -194,11 +193,7 @@ class OmniTuyaDevice:
         # outage. Recreate that socket as soon as LAN polling recovers so
         # alarm PIR events do not remain silently disconnected until HA is
         # restarted again.
-        if (
-            reconnect_push
-            and was_unavailable
-            and self.config.device_type == "alarm_kit"
-        ):
+        if was_unavailable and self.config.device_type == "alarm_kit":
             self._push_reconnect_requested.set()
 
     @staticmethod
@@ -296,15 +291,6 @@ class OmniTuyaDevice:
         async with self._lock:
             if not self.config.has_host:
                 self._available = False
-                return self.dps
-
-            # Tuya hubs generally permit only one TCP connection.  The alarm
-            # listener owns that persistent socket and keeps it alive with
-            # heartbeats, so opening a second status-poll connection every
-            # five seconds can silently stop PIR event delivery.  The listener
-            # updates ``_last_dps`` itself; use that cached status while it is
-            # connected and fall back to normal polling only during reconnect.
-            if self.config.device_type == "alarm_kit" and self._push_tuya:
                 return self.dps
 
             last_err: Exception | None = None
@@ -537,26 +523,18 @@ class OmniTuyaDevice:
 
                 # Enviar status inicial para forzar la apertura del socket
                 try:
-                    initial = listener.status()
-                    if isinstance(initial, dict) and isinstance(initial.get("dps"), dict):
-                        self._last_dps.update(initial["dps"])
-                        self._last_status_at = time.monotonic()
-                        # This is a baseline, not a PIR event.  Do not call
-                        # the entity callback or it would report motion after
-                        # every HA/device restart merely because 101/106 are
-                        # active-low values.
-                        self._mark_online(reconnect_push=False)
+                    listener.status()
                 except Exception:
                     pass
 
-                last_heartbeat = time.monotonic()
                 while self._listening and not self._push_reconnect_requested.is_set():
                     try:
                         data = listener.receive()
                         if data and isinstance(data, dict) and "dps" in data:
                             dps = data["dps"]
                             self._last_dps.update(dps)
-                            self._mark_online(reconnect_push=False)
+                            self._available = True
+                            self._consecutive_failures = 0
                             
                             _LOGGER.debug("TCP Push received from %s: %s", self.device_id, dps)
                             
@@ -564,13 +542,6 @@ class OmniTuyaDevice:
                                 self.hass.loop.call_soon_threadsafe(
                                     self._on_push, self.device_id, dps
                                 )
-                        # TinyTuya's monitor implementation requires a
-                        # heartbeat to keep a persistent socket subscribed to
-                        # asynchronous DPS updates.  Use nowait so the next
-                        # receive() consumes its acknowledgement normally.
-                        if time.monotonic() - last_heartbeat >= _PUSH_HEARTBEAT_INTERVAL:
-                            listener.heartbeat(nowait=True)
-                            last_heartbeat = time.monotonic()
                     except Exception as err:
                         if self._listening:
                             _LOGGER.debug("Push listener error for %s: %s", self.device_id, err)
