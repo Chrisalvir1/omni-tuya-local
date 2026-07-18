@@ -279,9 +279,23 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             new_name = config.get("name")
             if new_name:
                 device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
-                # Solo forzamos la actualización si el nombre original configurado (no el renombrado localmente por el usuario en HA) cambió
-                if device and device.original_name != new_name:
-                    device_registry.async_update_device(device.id, original_name=new_name)
+                # Home Assistant renamed ``original_name`` to ``name`` in its
+                # device-registry model.  Keep compatibility with both APIs;
+                # accessing the removed field previously made cloud sync fail
+                # before devices could be reloaded.
+                if device:
+                    registry_name = getattr(
+                        device, "original_name", getattr(device, "name", None)
+                    )
+                    if registry_name != new_name:
+                        if hasattr(device, "original_name"):
+                            device_registry.async_update_device(
+                                device.id, original_name=new_name
+                            )
+                        else:
+                            device_registry.async_update_device(
+                                device.id, name=new_name
+                            )
 
         # Eliminar los que ya no existen
         for dev_id in list(self.devices):
@@ -298,12 +312,22 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_setup(self) -> None:
         """Configurar e iniciar tareas en segundo plano del coordinator."""
-        from .discovery import async_start_udp_listener
-        self._udp_transports = await async_start_udp_listener(
-            self.hass,
-            self._handle_discovered_device
-        )
         domain_data = self.hass.data.setdefault(DOMAIN, {})
+        # One set of UDP sockets is shared by every config entry.  Starting a
+        # listener per device causes port contention on reload and prevents
+        # broadcasts from reaching every coordinator.
+        transports = domain_data.get("_lan_udp_transports")
+        if transports is None:
+            from .discovery import async_start_udp_listener
+
+            def _dispatch_discovery(device_id: str, ip: str, version: str) -> None:
+                for value in self.hass.data.get(DOMAIN, {}).values():
+                    if isinstance(value, OmniTuyaLocalCoordinator):
+                        value._handle_discovered_device(device_id, ip, version)
+
+            transports = await async_start_udp_listener(self.hass, _dispatch_discovery)
+            domain_data["_lan_udp_transports"] = transports
+        self._udp_transports = transports
         discovery_owner = domain_data.get("_lan_discovery_owner")
         if discovery_owner in (None, self.entry.entry_id) and self._periodic_discovery_unsub is None:
             domain_data["_lan_discovery_owner"] = self.entry.entry_id
@@ -356,12 +380,24 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._periodic_discovery_unsub = None
             if self.hass.data.get(DOMAIN, {}).get("_lan_discovery_owner") == self.entry.entry_id:
                 self.hass.data[DOMAIN].pop("_lan_discovery_owner", None)
-        for transport in self._udp_transports:
-            try:
-                transport.close()
-            except Exception:
-                pass
-        self._udp_transports.clear()
+        # __init__.async_unload_entry removes this coordinator from hass.data
+        # before calling us.  Close the shared sockets only after the final
+        # entry is gone; otherwise a reload of one device breaks discovery for
+        # all the others.
+        has_other_coordinators = any(
+            isinstance(value, OmniTuyaLocalCoordinator)
+            for value in self.hass.data.get(DOMAIN, {}).values()
+        )
+        if not has_other_coordinators:
+            transports = self.hass.data.get(DOMAIN, {}).pop(
+                "_lan_udp_transports", self._udp_transports
+            )
+            for transport in transports:
+                try:
+                    transport.close()
+                except Exception:
+                    pass
+        self._udp_transports = []
         for device in self.devices.values():
             try:
                 device.close()

@@ -37,6 +37,17 @@ async def async_scan_network(
     local_ip = get_local_ip()
     subnet = ".".join(local_ip.split(".")[:-1])
 
+    # The integration keeps a long-lived listener on Tuya's broadcast ports.
+    # TinyTuya's ``deviceScan`` opens those same ports without SO_REUSEADDR,
+    # so running it while the listener is active raises ``Address in use``.
+    # More importantly, that exception used to abort the recovery path just
+    # when a device had returned from a reboot.  The persistent listener will
+    # update an announced device immediately; this fallback scan is only for
+    # installations where the listener could not be started.
+    listener_active = bool(
+        hass.data.get("omni_tuya_local", {}).get("_lan_udp_transports")
+    )
+
     def _udp_listen() -> dict[str, bool]:
         seen: dict[str, bool] = {}
         client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -57,27 +68,36 @@ async def async_scan_network(
             client.close()
         return seen
 
-    udp_data = await hass.async_add_executor_job(_udp_listen)
+    udp_data = (
+        {}
+        if listener_active
+        else await hass.async_add_executor_job(_udp_listen)
+    )
 
     def _tinytuya_scan() -> dict:
         import tinytuya
         return tinytuya.deviceScan(False, 5) or {}
 
-    try:
-        scanned = await hass.async_add_executor_job(_tinytuya_scan)
-        for ip, info in scanned.items():
-            real_id = info.get("id") or info.get("gwId")
-            if real_id:
-                found_devices[ip] = {
-                    "host": ip,
-                    "ip": ip,
-                    "device_id": real_id,
-                    "name": f"Tuya {real_id[:5]}",
-                    "version": str(info.get("ver") or 3.3),
-                    "mac": info.get("mac") or info.get("mac_address") or "",
-                }
-    except Exception as err:
-        _LOGGER.warning("TinyTuya scan failed: %s", err)
+    if not listener_active:
+        try:
+            scanned = await hass.async_add_executor_job(_tinytuya_scan)
+            for ip, info in scanned.items():
+                real_id = info.get("id") or info.get("gwId")
+                if real_id:
+                    found_devices[ip] = {
+                        "host": ip,
+                        "ip": ip,
+                        "device_id": real_id,
+                        "name": f"Tuya {real_id[:5]}",
+                        "version": str(info.get("ver") or 3.3),
+                        "mac": info.get("mac") or info.get("mac_address") or "",
+                    }
+        except Exception as err:
+            _LOGGER.warning("TinyTuya scan failed: %s", err)
+    else:
+        _LOGGER.debug(
+            "Skipping TinyTuya scan because Omni Tuya owns UDP ports 6666/6667"
+        )
 
     ips_to_check = set(udp_data.keys())
     ips_to_check.update(device.get("host") or device.get("ip") for device in registry_devices if device.get("host") or device.get("ip"))
