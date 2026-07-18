@@ -196,6 +196,22 @@ def _coordinator(hass: HomeAssistant, entry_id: str) -> OmniTuyaLocalCoordinator
     return hass.data[DOMAIN][entry_id]
 
 
+def _coordinator_for_device(
+    hass: HomeAssistant, device_id: str, fallback_entry_id: str
+) -> OmniTuyaLocalCoordinator:
+    """Find the config-entry coordinator that owns a device-scoped action.
+
+    Integration services are registered only once, by whichever config entry
+    starts first.  Each entry has a scoped view of the shared inventory, so
+    using that first coordinator for every service made diagnostics fail with
+    an unhelpful ``Unknown error`` for every other device.
+    """
+    for coordinator in _coordinators(hass):
+        if coordinator.store.get(device_id):
+            return coordinator
+    return _coordinator(hass, fallback_entry_id)
+
+
 def _coordinators(hass: HomeAssistant) -> list[OmniTuyaLocalCoordinator]:
     """Return only config-entry coordinators, excluding integration state."""
     return [
@@ -250,12 +266,13 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         await coord.async_add_device(dict(call.data))
 
     async def remove_device(call: ServiceCall) -> None:
-        coord = _coordinator(hass, entry_id)
-        await coord.async_remove_device(call.data[CONF_DEVICE_ID])
+        device_id = call.data[CONF_DEVICE_ID]
+        coord = _coordinator_for_device(hass, device_id, entry_id)
+        await coord.async_remove_device(device_id)
 
     async def set_device_ip(call: ServiceCall) -> dict[str, Any]:
-        coord = _coordinator(hass, entry_id)
         device_id = call.data[CONF_DEVICE_ID]
+        coord = _coordinator_for_device(hass, device_id, entry_id)
         host = call.data[CONF_HOST].strip()
         current = coord.store.get(device_id)
         if not current:
@@ -268,8 +285,8 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         return {"device": stored}
 
     async def set_device_domain(call: ServiceCall) -> dict[str, Any]:
-        coord = _coordinator(hass, entry_id)
         device_id = call.data[CONF_DEVICE_ID]
+        coord = _coordinator_for_device(hass, device_id, entry_id)
         current = coord.store.get(device_id)
         if not current:
             raise ValueError(f"Tuya device {device_id} is not registered")
@@ -280,8 +297,8 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         return {"device": stored}
 
     async def set_device_type(call: ServiceCall) -> dict[str, Any]:
-        coord = _coordinator(hass, entry_id)
         device_id = call.data[CONF_DEVICE_ID]
+        coord = _coordinator_for_device(hass, device_id, entry_id)
         current = coord.store.get(device_id)
         if not current:
             raise ValueError(f"Tuya device {device_id} is not registered")
@@ -444,15 +461,15 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
 
     async def test_device(call: ServiceCall) -> dict[str, Any]:
         """Probar conectividad LAN de un dispositivo específico."""
-        coord = _coordinator(hass, entry_id)
         device_id = call.data[CONF_DEVICE_ID]
+        coord = _coordinator_for_device(hass, device_id, entry_id)
         result = await coord.async_test_device(device_id)
         return result
 
     async def fetch_dps(call: ServiceCall) -> dict[str, Any]:
         """Obtener todos los DPS de un dispositivo en tiempo real."""
-        coord = _coordinator(hass, entry_id)
         device_id = call.data[CONF_DEVICE_ID]
+        coord = _coordinator_for_device(hass, device_id, entry_id)
         config = coord.store.get(device_id)
         if not config:
             raise ValueError(f"Device {device_id} not found")
