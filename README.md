@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-0.5.46-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-0.5.61-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
@@ -336,6 +336,57 @@ data:
     "20": "voltage"      # DPS 20 = voltaje (V×10)
 ```
 
+### Robot aspirador Tuya / ROPVACNIC (`sd`)
+
+Los robots aspiradores ROPVACNIC y compatibles Tuya de categoría `sd` utilizan el perfil estándar documentado por Tuya. Omni Tuya Local expone sus comandos nativos mediante la entidad `vacuum` principal y entidades de selección dedicadas:
+
+- `select.<robot>_modo_de_limpieza` (DPS 3): controla el modo de limpieza activo.
+- `select.<robot>_control_manual` (DPS 4): permite el control direccional manual.
+
+#### Mapeo Estándar de DPS (`sd`)
+
+| DPS | Nombre | Función / Tipo | Valores permitidos / Relevantes |
+| --- | --- | --- | --- |
+| 2 | Inicio de limpieza | `power_go` (booleano) | `true` (iniciar), `false` (detener) |
+| 3 | Modo de limpieza | `mode` (enum/select) | `standby`, `random`, `smart`, `wall_follow`, `spiral`, `chargego` |
+| 4 | Control manual | `direction_control` (enum/select) | `forward`, `backward`, `turn_left`, `turn_right`, `stop` |
+| 5 | Estado de limpieza | `status` (sensor solo lectura) | `cleaning`, `goto_charge`, `charging`, `charge_done` |
+| 6 | Batería | `battery` (sensor % / `battery_level`) | 0–100 % |
+| 7 | Vida del cepillo lateral | telemetría sensor (%) | 0–100 % |
+| 8 | Vida del cepillo principal | telemetría sensor (%) | 0–100 % |
+| 9 | Vida del filtro | telemetría sensor (%) | 0–100 % |
+| 17 | Tiempo de limpieza | telemetría sensor (`min`) | minutos transcurridos |
+| 18 | Fallo del robot | sensor de error | código / mapa de fallos del fabricante |
+
+#### Comportamiento de la Entidad Vacuum y Modos
+
+1. **Inicio y Parada**: `async_start` y `async_stop` utilizan **DPS 2** (`power_go`), nunca el DPS 1.
+2. **Estado**: Se deriva prioritariamente del **DPS 5** (`status`):
+   - `charge_done` y `charging` (así como `charge`, `dock`, `docked`) = **docked**.
+   - `goto_charge` = **returning**.
+   - `cleaning`, `smart_clean`, `wall_clean`, `spot_clean` = **cleaning**.
+3. **Volver a Base**: La acción "Volver a base" envía únicamente **DPS 3 = `chargego`**. Se eliminó cualquier comando especulativo hacia DPS 101/104 para evitar comportamientos imprevistos.
+
+#### Diferencia entre Modo de Limpieza y Control Manual
+
+- **Modo de Limpieza (`select.<robot>_modo_de_limpieza`)**: Define el comportamiento autónomo del robot (ej. `smart`, `wall_follow`, `spiral`, `random`). Si Tuya Cloud expone un esquema de funciones del producto con opciones específicas, Omni Tuya Local las utiliza automáticamente en lugar del fallback estándar.
+- **Control Manual (`select.<robot>_control_manual`)**: **No es un modo de limpieza**. Corresponde al mando direccional del DPS 4 (`forward`, `backward`, `turn_left`, `turn_right`, `stop`) para maniobrar manualmente el dispositivo.
+
+#### Integración con HomeKit Bridge y Puentes Matter
+
+Tanto `select.<robot>_modo_de_limpieza` como `select.<robot>_control_manual` son entidades nativas de tipo `select` en Home Assistant. Quedan 100% listos para que puentes como **HomeKit Bridge** o bridges de **Matter** (como la integración nativa de HA o add-ons de exportación a Matter) los reconozcan y mapeen directamente a selectores de modo o regletas de botones direccionales.
+
+Si el dispositivo se agregó manualmente sin esquema cloud, se pueden declarar los valores así:
+
+```yaml
+domain: vacuum
+device_type: robot_vacuum
+dps_map:
+  "3":
+    name: "Modo de limpieza"
+    options: ["standby", "random", "smart", "wall_follow", "spiral", "chargego"]
+```
+
 ---
 
 ## Almacenamiento
@@ -396,6 +447,7 @@ Los campos son compatibles: `device_id`, `name`, `local_key`, `ip` → `host`, `
 
 | Versión | Cambios |
 |---|---|
+| **0.5.61** | **Soporte completo ROPVACNIC / Tuya categoría `sd` (Robot Aspirador)**. Mapeo nativo de DPS (DPS 2 `power_go`, DPS 3 `mode`, DPS 4 `direction_control`, DPS 5 `status`, DPS 6 batería, DPS 7/8/9 vida de cepillos/filtro, DPS 17 tiempo de limpieza, DPS 18 fallo). Entidades `select.<robot>_modo_de_limpieza` y `select.<robot>_control_manual` creadas automáticamente y listas para HomeKit Bridge o puentes Matter. Derivación de estado desde DPS 5 y eliminación de comandos especulativos. |
 | **0.5.24** | **Perfil seguro para comederos Tuya con cámara**. Importa el esquema oficial de funciones del producto para usar el DP numérico de alimentación manual, conserva la cantidad de porciones tras reinicios/redescubrimiento/cambio de IP y sólo expone `Limpiar tolva` cuando el producto declara ese comando. |
 | **0.5.23** | **Mejora en detección dinámica de dimmers**. Corrige el DPS de brillo cuando un dimmer usa el DPS `2` para intensidad y evita modificar por error el límite mínimo de atenuación. |
 | **0.5.0** | **Mejoras en Sincronización Cloud y Flujo de Configuración**. Ahora puedes importar de forma masiva todos tus dispositivos Tuya de una sola vez durante la configuración inicial. Se agregó una nueva opción maestra para "Actualizar Credenciales de la Nube (API Key/Secret)", permitiéndote renovar tu suscripción de Tuya sin tener que reinstalar la integración. También se añadió un botón global "Sincronizar Nube" en la interfaz para descargar nuevos dispositivos y actualizar sus nombres de manera automática sin sobreescribir la configuración local. |

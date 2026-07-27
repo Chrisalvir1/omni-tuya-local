@@ -12,6 +12,23 @@ from typing import Any
 from .pet_feeder import function_id
 
 
+# The following IDs are part of Tuya's documented ``sd`` robot-vacuum
+# profile.  They are used only when the imported device identifies itself as
+# that profile; every other product keeps the conservative ``DPS <id>`` label.
+_ROBOT_VACUUM_DPS_LABELS = {
+    "2": "Inicio de limpieza",
+    "3": "Modo de limpieza",
+    "4": "Control manual",
+    "5": "Estado de limpieza",
+    "6": "Batería",
+    "7": "Vida del cepillo lateral",
+    "8": "Vida del cepillo principal",
+    "9": "Vida del filtro",
+    "17": "Tiempo de limpieza",
+    "18": "Fallo del robot",
+}
+
+
 def dps_kind(value: Any) -> str | None:
     """Return the Home Assistant-safe kind for an observed DPS value."""
     if isinstance(value, bool):
@@ -36,6 +53,15 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
         label = function.get("name") or function.get("code") or function.get("identifier")
         if label:
             return str(label).replace("_", " ").strip().title()
+
+    if (
+        config.get("device_type") == "robot_vacuum"
+        or str(config.get("category") or "").lower() == "sd"
+        or config.get("domain") == "vacuum"
+    ):
+        standard_label = _ROBOT_VACUUM_DPS_LABELS.get(dps_id)
+        if standard_label:
+            return standard_label
     return f"DPS {dps_id}"
 
 

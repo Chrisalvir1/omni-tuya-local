@@ -30,56 +30,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
-    _attr_supported_features = VacuumEntityFeature.START | VacuumEntityFeature.STOP | VacuumEntityFeature.RETURN_HOME | VacuumEntityFeature.PAUSE
+    _attr_supported_features = (
+        VacuumEntityFeature.START
+        | VacuumEntityFeature.STOP
+        | VacuumEntityFeature.RETURN_HOME
+        | VacuumEntityFeature.PAUSE
+        | VacuumEntityFeature.BATTERY
+    )
 
     @property
     def state(self) -> str | None:
-        value = self.dps("1")
-        if value is True or value == "on":
-            return "cleaning"
-            
-        # Check DP 3 for chargego state or DP 5 for goto_charge
-        mode = self.dps("3")
-        if isinstance(mode, str):
-            mode = mode.lower()
-        if mode in ("chargego", "charge", "charging", "dock", "docked"):
-            return "docked"
-            
+        # Standard Tuya ``sd`` robots use DP 2 (power_go) for start/stop,
+        # DP 3 for mode and DP 5 for status.  DP 1 is not a standard vacuum
+        # control and caused this profile to remain idle in Home Assistant.
         status = self.dps("5")
         if isinstance(status, str):
             status = status.lower()
-        if status in ("goto_charge", "charge", "charging", "dock", "docked"):
+        if status in ("goto_charge",):
+            return "returning"
+        if status in ("charge", "charging", "charge_done", "dock", "docked"):
             return "docked"
+        if status in ("cleaning", "smart_clean", "wall_clean", "spot_clean"):
+            return "cleaning"
 
-        if isinstance(value, str):
-            value = value.lower()
-        if value in ("charge", "charging", "dock", "docked"):
-            return "docked"
+        mode = self.dps("3")
+        if isinstance(mode, str) and mode.lower() == "chargego":
+            return "returning"
+
+        value = self.dps("2")
+        if value is True or value == "on":
+            return "cleaning"
+
         return "idle"
 
+    @property
+    def battery_level(self) -> int | None:
+        val = self.dps("6")
+        if val is None:
+            return None
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return None
+
     async def async_start(self) -> None:
-        await self.coordinator.async_set_status(self.device_id, True, 1)
+        await self.coordinator.async_set_status(self.device_id, True, 2)
 
     async def async_stop(self, **kwargs) -> None:
-        await self.coordinator.async_set_status(self.device_id, False, 1)
+        await self.coordinator.async_set_status(self.device_id, False, 2)
         
     async def async_pause(self, **kwargs) -> None:
         await self.async_stop(**kwargs)
 
     async def async_return_to_base(self, **kwargs) -> None:
-        # Enviar comandos a los DPs conocidos de dock sin depender de raw_dps
-        # Evitamos enviar a DP 1 (que suele ser el interruptor on/off) para no
-        # sobreescribir el comando de dock con un "stop/inactivo".
-        commands = [
-            (101, "Charge"),
-            (104, "Charge"),
-            (3, "chargego"),
-            (5, "goto_charge")
-        ]
-        
-        import asyncio
-        tasks = [
-            self.coordinator.async_set_value(self.device_id, dps_id, val)
-            for dps_id, val in commands
-        ]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        # ``chargego`` is the documented command on the standard mode DP.
+        # Do not spray values at unrelated product-specific DPS (101/104):
+        # those can control a different feature on another Tuya robot.
+        await self.coordinator.async_set_value(self.device_id, 3, "chargego")

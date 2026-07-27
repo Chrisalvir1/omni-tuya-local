@@ -66,8 +66,13 @@ _CATEGORY_PROFILES: dict[str, str] = {
     "co2bj": "co2_sensor",
 }
 
-# Perfiles por DPS ID (para cuando un device expone múltiples DPS de sensor)
 _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]] = {
+    # Telemetría estándar robot aspirador Tuya (sd)
+    "6": (SensorDeviceClass.BATTERY, PERCENTAGE, SensorStateClass.MEASUREMENT),
+    "7": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
+    "8": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
+    "9": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
+    "17": (SensorDeviceClass.DURATION, "min", SensorStateClass.MEASUREMENT),
     # Sensor temp+humedad estándar Tuya (wsdcg)
     "temp": (SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT),
     "hum": (SensorDeviceClass.HUMIDITY, PERCENTAGE, SensorStateClass.MEASUREMENT),
