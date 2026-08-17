@@ -272,8 +272,8 @@ class OmniTuyaDevice:
         return self._build_tuya().set_multiple_values(dps_dict, nowait=True)
 
     def _sync_probe_protocol_versions(self) -> tuple[str, dict[str, Any]] | None:
-        """Try alternative Tuya LAN protocol versions once after error 914."""
-        for version in ("3.5", "3.4", "3.3", "3.1"):
+        """Try alternative Tuya LAN protocol versions safely."""
+        for version in ("3.3", "3.1", "3.4", "3.5"):
             if version == str(self.config.version):
                 continue
             try:
@@ -324,42 +324,6 @@ class OmniTuyaDevice:
                     self._invalidate_client()
                 if attempt + 1 < _MAX_STATUS_ATTEMPTS:
                     await asyncio.sleep(0.2)
-
-            # Error 914 / decode / decrypt means the device answered on the LAN but rejected the
-            # encryption framing. Protocol changes are safe to test once; a
-            # missing/rotated local key will still fail all candidates.
-            last_err_lower = self._last_error_detail.lower()
-            if (
-                (
-                    "check device key or version" in last_err_lower
-                    or "decode error" in last_err_lower
-                    or "decrypt error" in last_err_lower
-                    or "914" in self._last_error_detail
-                )
-                and self._probed_config_version != str(self.config.version)
-            ):
-                self._probed_config_version = str(self.config.version)
-                try:
-                    probe = await asyncio.wait_for(
-                        self.hass.async_add_executor_job(self._sync_probe_protocol_versions),
-                        timeout=16,
-                    )
-                except asyncio.TimeoutError:
-                    probe = None
-                if probe is not None:
-                    version, dps = probe
-                    self._runtime_version = version
-                    self._detected_protocol_version = version
-                    previous_dps = dict(self._last_dps)
-                    self._last_dps.update(dps)
-                    self._last_status_at = time.monotonic()
-                    self._mark_online()
-                    self._notify_polled_alarm_trigger(previous_dps, dps)
-                    _LOGGER.info(
-                        "Device %s responded with Tuya protocol %s; saving detected version",
-                        self.device_id, version,
-                    )
-                    return self.dps
 
             self._mark_failure(last_err)
             return self.dps
