@@ -13,6 +13,7 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
 
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict, suffix: str = "") -> None:
         super().__init__(coordinator)
+        self._attr_icon: str | None = None
         self.config = config
         self.device_id = config["device_id"]
         self.dps_id = str(suffix or "1")
@@ -89,8 +90,9 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
 
     @property
     def icon(self) -> str | None:
-        if self._attr_icon is not None:
-            return self._attr_icon
+        attr_icon = getattr(self, "_attr_icon", None)
+        if attr_icon is not None:
+            return attr_icon
         # Si la entidad tiene device_class (ej. batería, energía, temperatura, movimiento),
         # retornar None para que Home Assistant aplique sus iconos dinámicos de estado.
         if getattr(self, "device_class", None) or getattr(self, "_attr_device_class", None):

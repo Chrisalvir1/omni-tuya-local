@@ -35,7 +35,6 @@ class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
         | VacuumEntityFeature.STOP
         | VacuumEntityFeature.RETURN_HOME
         | VacuumEntityFeature.PAUSE
-        | VacuumEntityFeature.BATTERY
     )
 
     @property
@@ -62,16 +61,6 @@ class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
             return "cleaning"
 
         return "idle"
-
-    @property
-    def battery_level(self) -> int | None:
-        val = self.dps("6")
-        if val is None:
-            return None
-        try:
-            return int(val)
-        except (TypeError, ValueError):
-            return None
 
     async def async_start(self) -> None:
         await self.coordinator.async_set_status(self.device_id, True, 2)

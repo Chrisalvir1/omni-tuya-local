@@ -7,8 +7,6 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    CONCENTRATION_PARTS_PER_MILLION,
     PERCENTAGE,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
@@ -17,6 +15,18 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
+
+try:
+    from homeassistant.const import UnitOfDensity
+    _UNIT_UG_M3: str = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
+except (ImportError, AttributeError):
+    _UNIT_UG_M3 = "µg/m³"
+
+try:
+    from homeassistant.const import UnitOfRatio
+    _UNIT_PPM: str = UnitOfRatio.PARTS_PER_MILLION
+except (ImportError, AttributeError):
+    _UNIT_PPM = "ppm"
 
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
@@ -40,10 +50,10 @@ _SENSOR_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorSt
     "cgq": (SensorDeviceClass.ILLUMINANCE, "lx", SensorStateClass.MEASUREMENT),
 
     # PM2.5 / calidad del aire
-    "pm25_sensor": (SensorDeviceClass.PM25, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, SensorStateClass.MEASUREMENT),
+    "pm25_sensor": (SensorDeviceClass.PM25, _UNIT_UG_M3, SensorStateClass.MEASUREMENT),
 
     # CO2
-    "co2_sensor": (SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, SensorStateClass.MEASUREMENT),
+    "co2_sensor": (SensorDeviceClass.CO2, _UNIT_PPM, SensorStateClass.MEASUREMENT),
 
     # Energía / potencia (tomacorriente inteligente)
     "power_sensor": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
@@ -86,8 +96,8 @@ _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorState
     "humidity": (SensorDeviceClass.HUMIDITY, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "temperature": (SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT),
     "illuminance": (SensorDeviceClass.ILLUMINANCE, "lx", SensorStateClass.MEASUREMENT),
-    "co2": (SensorDeviceClass.CO2, CONCENTRATION_PARTS_PER_MILLION, SensorStateClass.MEASUREMENT),
-    "pm25": (SensorDeviceClass.PM25, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, SensorStateClass.MEASUREMENT),
+    "co2": (SensorDeviceClass.CO2, _UNIT_PPM, SensorStateClass.MEASUREMENT),
+    "pm25": (SensorDeviceClass.PM25, _UNIT_UG_M3, SensorStateClass.MEASUREMENT),
     "cur_power": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
     "cur_current": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
     "cur_voltage": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, SensorStateClass.MEASUREMENT),
