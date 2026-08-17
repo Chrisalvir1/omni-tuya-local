@@ -24,7 +24,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for config in coordinator.store.all().values():
             device_domain = config.get("domain")
             device_type = config.get("device_type") or "generic"
-            if device_domain != "switch" and device_type not in _PREDEFINED_SWITCHES:
+            if (
+                device_domain != "switch"
+                and device_type not in _PREDEFINED_SWITCHES
+                and device_type not in ("outlet", "power_strip", "switch")
+            ):
                 continue
             for dps_id, name in _switch_dps(config, coordinator):
                 unique_suffix = "" if dps_id == "1" else f"_{dps_id}"

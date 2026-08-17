@@ -162,6 +162,10 @@ def guess_domain(data: dict[str, Any]) -> str:
     if category in {"mcs", "cs", "pir", "ywbj", "rqbj", "ldcg", "sjcj"}:
         return "binary_sensor"
 
+    # Si el modelo/producto es explícitamente un plug / tomacorriente / regleta
+    if any(w in product for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo")):
+        return "switch"
+
     # 3. Por nombre / product_name
     if any(w in text for w in ("light", "lamp", "bombillo", "luz", "dimmer", "led", "bulb", "luminaria")):
         return "light"
