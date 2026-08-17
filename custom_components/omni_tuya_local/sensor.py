@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
-from .dps import discovered_dps
+from .dps import discovered_dps, dps_label
 from .entity import OmniTuyaEntity
 
 # ── Mapeo device_type/category → (SensorDeviceClass, unit, state_class) ──────
@@ -73,6 +73,10 @@ _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorState
     "8": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "9": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "17": (SensorDeviceClass.DURATION, "min", SensorStateClass.MEASUREMENT),
+    # Telemetría estándar consumo tomacorrientes / interruptores inteligentes (cz, pc, sp)
+    "18": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
+    "19": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
+    "20": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, SensorStateClass.MEASUREMENT),
     # Sensor temp+humedad estándar Tuya (wsdcg)
     "temp": (SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT),
     "hum": (SensorDeviceClass.HUMIDITY, PERCENTAGE, SensorStateClass.MEASUREMENT),
@@ -193,6 +197,9 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
     def name(self) -> str | None:
         if self._desc.get("name"):
             return self._desc["name"]
+        label = dps_label(self.config, self.dps_id)
+        if label and label != f"DPS {self.dps_id}":
+            return label
         if self.dps_id == "1":
             return None
         return f"Sensor {self.dps_id}"

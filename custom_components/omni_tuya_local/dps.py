@@ -28,6 +28,31 @@ _ROBOT_VACUUM_DPS_LABELS = {
     "18": "Fallo del robot",
 }
 
+_OUTLET_DPS_LABELS = {
+    "1": "Toma 1",
+    "2": "Toma 2",
+    "3": "Toma 3",
+    "4": "Toma 4",
+    "5": "Toma 5",
+    "6": "Toma 6",
+    "7": "USB",
+    "9": "Temporizador 1",
+    "10": "Temporizador 2",
+    "17": "Energía",
+    "18": "Corriente",
+    "19": "Potencia",
+    "20": "Voltaje",
+}
+
+_SWITCH_DPS_LABELS = {
+    "1": "Canal 1",
+    "2": "Canal 2",
+    "3": "Canal 3",
+    "4": "Canal 4",
+    "5": "Canal 5",
+    "6": "Canal 6",
+}
+
 
 def dps_kind(value: Any) -> str | None:
     """Return the Home Assistant-safe kind for an observed DPS value."""
@@ -54,14 +79,29 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
         if label:
             return str(label).replace("_", " ").strip().title()
 
+    dev_type = str(config.get("device_type") or "").lower()
+    cat = str(config.get("category") or "").lower()
+    domain = str(config.get("domain") or "").lower()
+
     if (
-        config.get("device_type") == "robot_vacuum"
-        or str(config.get("category") or "").lower() == "sd"
-        or config.get("domain") == "vacuum"
+        dev_type == "robot_vacuum"
+        or cat == "sd"
+        or domain == "vacuum"
     ):
         standard_label = _ROBOT_VACUUM_DPS_LABELS.get(dps_id)
         if standard_label:
             return standard_label
+
+    if dev_type in ("outlet", "power_strip") or cat in ("cz", "pc", "sp"):
+        standard_label = _OUTLET_DPS_LABELS.get(dps_id)
+        if standard_label:
+            return standard_label
+
+    if dev_type == "switch" or cat in ("kg", "tgkg", "tgq", "dlq", "tdq") or domain == "switch":
+        standard_label = _SWITCH_DPS_LABELS.get(dps_id)
+        if standard_label:
+            return standard_label
+
     return f"DPS {dps_id}"
 
 

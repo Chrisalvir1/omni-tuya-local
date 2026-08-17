@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
 from .const import TUYA_CATEGORY_TO_DOMAIN
 
+_DATACLASS_KWARGS = {"slots": True} if sys.version_info >= (3, 10) else {}
 
-@dataclass(slots=True)
+
+@dataclass(**_DATACLASS_KWARGS)
 class TuyaEntityDescription:
     entity_id_suffix: str
     platform: str
@@ -17,7 +20,7 @@ class TuyaEntityDescription:
     unit: str | None = None
 
 
-@dataclass(slots=True)
+@dataclass(**_DATACLASS_KWARGS)
 class TuyaDeviceConfig:
     device_id: str
     name: str

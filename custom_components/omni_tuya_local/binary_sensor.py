@@ -11,6 +11,7 @@ from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
 from .dps import discovered_dps
 from .entity import OmniTuyaEntity
+from .switch import _switch_dps
 
 # ── Mapeo device_type → BinarySensorDeviceClass ──────────────────────────────
 # Esto es LO MÁS IMPORTANTE para que HomeKit identifique correctamente
@@ -109,13 +110,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # Show every boolean DPS observed over LAN as a read-only binary
             # sensor.  The primary binary sensor above keeps its existing
             # stable unique_id, so it is not duplicated here.
+            switch_dps_ids = {
+                dps_id for dps_id, _ in _switch_dps(config, coordinator)
+            } if (device_domain == "switch" or device_type in {"pet_feeder", "coffee_maker", "kettle"}) else set()
+
             for dps_id, info in discovered_dps(config).items():
                 if info["kind"] != "boolean":
                     continue
                 if device_domain == "binary_sensor" and dps_id == "1":
                     continue
+                if dps_id in switch_dps_ids:
+                    continue
                 if dps_id == "1" and device_domain in {
-                    "switch", "light", "fan", "cover", "climate", "lock",
+                    "light", "fan", "cover", "climate", "lock",
                     "vacuum", "humidifier", "alarm_control_panel",
                 }:
                     continue
