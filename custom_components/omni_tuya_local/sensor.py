@@ -242,4 +242,14 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
                 return v / 10 if v > 500 else v
             except (TypeError, ValueError):
                 return value
+        # Si es energía acumulada
+        if self._attr_device_class == SensorDeviceClass.ENERGY:
+            try:
+                v = float(value)
+                # Escalar según formato estándar Tuya (centésimas de kWh)
+                if self._attr_native_unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR and v > 500:
+                    return round(v / 100.0, 3)
+                return round(v, 3)
+            except (TypeError, ValueError):
+                return value
         return value

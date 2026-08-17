@@ -325,11 +325,17 @@ class OmniTuyaDevice:
                 if attempt + 1 < _MAX_STATUS_ATTEMPTS:
                     await asyncio.sleep(0.2)
 
-            # Error 914 means the device answered on the LAN but rejected the
+            # Error 914 / decode / decrypt means the device answered on the LAN but rejected the
             # encryption framing. Protocol changes are safe to test once; a
             # missing/rotated local key will still fail all candidates.
+            last_err_lower = self._last_error_detail.lower()
             if (
-                "Check device key or version" in self._last_error_detail
+                (
+                    "check device key or version" in last_err_lower
+                    or "decode error" in last_err_lower
+                    or "decrypt error" in last_err_lower
+                    or "914" in self._last_error_detail
+                )
                 and self._probed_config_version != str(self.config.version)
             ):
                 self._probed_config_version = str(self.config.version)
