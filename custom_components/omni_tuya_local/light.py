@@ -26,8 +26,74 @@ from .const import (
     TUYA_COLOR_TEMP_MIN,
 )
 from .coordinator import OmniTuyaLocalCoordinator
+from .dps import dps_label
 from .entity import OmniTuyaEntity
+from .pet_feeder import function_id
 from .util import ha_to_tuya_brightness, tuya_to_ha_brightness
+
+
+def _light_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tuple[str, str | None]]:
+    """Determinar qué DPS exponer como canales de luz."""
+    channels_dict: dict[str, str | None] = {}
+    dps_map = config.get("dps_map") or {}
+    tuya_functions = config.get("tuya_functions") or []
+    disc_dps = config.get("discovered_dps") or {}
+    raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+    if not raw_dps and coordinator.devices.get(config.get("device_id")):
+        raw_dps = coordinator.devices[config.get("device_id")].dps
+
+    # 1. dps_map explícito
+    for dps_id, desc in dps_map.items():
+        if str(dps_id).isdigit():
+            name = desc.get("name") if isinstance(desc, dict) else (desc if isinstance(desc, str) else None)
+            channels_dict[str(dps_id)] = name
+
+    # 2. tuya_functions (esquema Tuya Cloud)
+    for func in tuya_functions:
+        if not isinstance(func, dict):
+            continue
+        dp_id = function_id(func)
+        if not dp_id or not dp_id.isdigit():
+            continue
+        code = str(func.get("code") or func.get("identifier") or "").lower()
+        if code in ("switch", "switch_led", "power") or code.startswith("switch_") or code.startswith("led_"):
+            name = func.get("name") or func.get("code")
+            if name:
+                name = str(name).replace("_", " ").strip().title()
+            if dp_id not in channels_dict or not channels_dict[dp_id]:
+                channels_dict[dp_id] = name
+
+    # 3. discovered_dps persistido en config (canales 1..8)
+    for dps_id, info in disc_dps.items():
+        if str(dps_id).isdigit() and isinstance(info, dict) and info.get("kind") == "boolean":
+            if int(dps_id) in range(1, 9) and str(dps_id) not in channels_dict:
+                lbl = info.get("name")
+                channels_dict[str(dps_id)] = lbl if lbl and lbl != f"DPS {dps_id}" else None
+
+    # 4. raw_dps en vivo (canales 1..8)
+    for dps_id, value in raw_dps.items():
+        if isinstance(value, bool) and str(dps_id).isdigit() and int(dps_id) in range(1, 9):
+            if str(dps_id) not in channels_dict:
+                channels_dict[str(dps_id)] = None
+
+    if not channels_dict:
+        channels_dict["1"] = None
+
+    sorted_channels = sorted(channels_dict.items(), key=lambda item: int(item[0]))
+    has_multiple = len(sorted_channels) > 1
+    result: list[tuple[str, str | None]] = []
+    for dps_id, name in sorted_channels:
+        if name:
+            result.append((dps_id, name))
+        elif has_multiple:
+            label = dps_label(config, dps_id)
+            if label and label != f"DPS {dps_id}":
+                result.append((dps_id, label))
+            else:
+                result.append((dps_id, f"Luz {dps_id}"))
+        else:
+            result.append((dps_id, None))
+    return result
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -39,10 +105,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for config in coordinator.store.all().values():
             if config.get("domain") != "light":
                 continue
-            uid = f"{DOMAIN}_{config['device_id']}"
-            if uid not in _known_unique_ids:
-                _known_unique_ids.add(uid)
-                entities.append(OmniTuyaLight(coordinator, config))
+            for dps_id, name in _light_dps(config, coordinator):
+                unique_suffix = "" if dps_id == "1" else f"_{dps_id}"
+                uid = f"{DOMAIN}_{config['device_id']}{unique_suffix}"
+                if uid not in _known_unique_ids:
+                    _known_unique_ids.add(uid)
+                    entities.append(OmniTuyaLight(coordinator, config, dps_id, name))
         if entities:
             async_add_entities(entities)
 
@@ -53,8 +121,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class OmniTuyaLight(OmniTuyaEntity, LightEntity):
     """Luz Tuya con detección dinámica de ColorMode."""
 
-    def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict) -> None:
-        super().__init__(coordinator, config, "1")
+    def __init__(
+        self,
+        coordinator: OmniTuyaLocalCoordinator,
+        config: dict,
+        dps_id: str = "1",
+        channel_name: str | None = None,
+    ) -> None:
+        super().__init__(coordinator, config, dps_id)
+        self._channel_name = channel_name
+
+    @property
+    def name(self) -> str | None:
+        if self._channel_name:
+            return self._channel_name
+        if self.dps_id == "1":
+            return None
+        return f"Luz {self.dps_id}"
 
     # ── Detección dinámica de capacidades ─────────────────────────────────────
 
@@ -138,7 +221,7 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
 
     @property
     def is_on(self) -> bool | None:
-        value = self.dps("1")
+        value = self.dps(self.dps_id)
         if value is None:
             return None
         return value is True or value == "on"
@@ -192,7 +275,7 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
     # ── Comandos ──────────────────────────────────────────────────────────────
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        payload_dps: dict[int, Any] = {1: True}
+        payload_dps: dict[int, Any] = {int(self.dps_id): True}
 
         dps_bright = self._brightness_dps
         if ATTR_BRIGHTNESS in kwargs and dps_bright:
@@ -219,7 +302,7 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
         await self.coordinator.async_set_values(self.device_id, payload_dps)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.async_set_status(self.device_id, False, 1)
+        await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
 
 
 # ─── Helpers de color ─────────────────────────────────────────────────────────

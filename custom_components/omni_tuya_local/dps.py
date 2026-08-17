@@ -54,6 +54,16 @@ _SWITCH_DPS_LABELS = {
 }
 
 
+_LIGHT_DPS_LABELS = {
+    "1": "Luz 1",
+    "2": "Luz 2",
+    "3": "Luz 3",
+    "4": "Luz 4",
+    "5": "Luz 5",
+    "6": "Luz 6",
+}
+
+
 def dps_kind(value: Any) -> str | None:
     """Return the Home Assistant-safe kind for an observed DPS value."""
     if isinstance(value, bool):
@@ -82,6 +92,7 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
     dev_type = str(config.get("device_type") or "").lower()
     cat = str(config.get("category") or "").lower()
     domain = str(config.get("domain") or "").lower()
+    product = str(config.get("product_name") or "").lower()
 
     if (
         dev_type == "robot_vacuum"
@@ -92,12 +103,24 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
         if standard_label:
             return standard_label
 
-    if dev_type in ("outlet", "power_strip") or cat in ("cz", "pc", "sp"):
+    if (
+        dev_type in ("outlet", "power_strip")
+        or cat in ("cz", "pc", "sp")
+        or any(w in product for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo"))
+    ):
         standard_label = _OUTLET_DPS_LABELS.get(dps_id)
         if standard_label:
             return standard_label
 
+    if dev_type in ("light", "dimmer", "led_strip") or cat in ("dj", "dd", "fwd", "dc", "xktyd") or domain == "light":
+        standard_label = _LIGHT_DPS_LABELS.get(dps_id)
+        if standard_label:
+            return standard_label
+
     if dev_type == "switch" or cat in ("kg", "tgkg", "tgq", "dlq", "tdq") or domain == "switch":
+        standard_label = _SWITCH_DPS_LABELS.get(dps_id)
+        if standard_label:
+            return standard_label
         standard_label = _SWITCH_DPS_LABELS.get(dps_id)
         if standard_label:
             return standard_label

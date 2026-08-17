@@ -11,6 +11,7 @@ from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
 from .dps import discovered_dps
 from .entity import OmniTuyaEntity
+from .light import _light_dps
 from .switch import _switch_dps
 
 # ── Mapeo device_type → BinarySensorDeviceClass ──────────────────────────────
@@ -112,19 +113,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # stable unique_id, so it is not duplicated here.
             switch_dps_ids = {
                 dps_id for dps_id, _ in _switch_dps(config, coordinator)
-            } if (device_domain == "switch" or device_type in {"pet_feeder", "coffee_maker", "kettle"}) else set()
+            } if (device_domain == "switch" or device_type in {"pet_feeder", "coffee_maker", "kettle", "outlet", "power_strip", "switch"}) else set()
+
+            light_dps_ids = {
+                dps_id for dps_id, _ in _light_dps(config, coordinator)
+            } if device_domain == "light" else set()
 
             for dps_id, info in discovered_dps(config).items():
                 if info["kind"] != "boolean":
                     continue
                 if device_domain == "binary_sensor" and dps_id == "1":
                     continue
-                if dps_id in switch_dps_ids:
+                if dps_id in switch_dps_ids or dps_id in light_dps_ids:
                     continue
-                if dps_id == "1" and device_domain in {
-                    "light", "fan", "cover", "climate", "lock",
+                if device_domain in {
+                    "switch", "light", "fan", "cover", "climate", "lock",
                     "vacuum", "humidifier", "alarm_control_panel",
-                }:
+                } and str(dps_id).isdigit() and int(dps_id) in range(1, 9):
                     continue
                 uid = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}_binary"
                 if uid not in _known_unique_ids:

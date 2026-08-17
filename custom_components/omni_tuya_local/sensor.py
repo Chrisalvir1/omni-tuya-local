@@ -66,14 +66,17 @@ _CATEGORY_PROFILES: dict[str, str] = {
     "co2bj": "co2_sensor",
 }
 
-_DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]] = {
-    # Telemetría estándar robot aspirador Tuya (sd)
+_ROBOT_VACUUM_DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]] = {
     "6": (SensorDeviceClass.BATTERY, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "7": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "8": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "9": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "17": (SensorDeviceClass.DURATION, "min", SensorStateClass.MEASUREMENT),
+}
+
+_DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]] = {
     # Telemetría estándar consumo tomacorrientes / interruptores inteligentes (cz, pc, sp)
+    "17": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
     "18": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
     "19": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
     "20": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, SensorStateClass.MEASUREMENT),
@@ -160,7 +163,18 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             self._attr_state_class = SensorStateClass.MEASUREMENT
             return
 
-        # 2. Perfil basado en la 'name' del DPS (clave en dps_map)
+        # 2. Perfil para robot aspirador
+        device_type = (config.get("device_type") or "").lower()
+        category = (config.get("category") or "").lower()
+        domain = (config.get("domain") or "").lower()
+        if (device_type == "robot_vacuum" or category == "sd" or domain == "vacuum") and str(dps_id) in _ROBOT_VACUUM_DPS_PROFILES:
+            dc, unit, sc = _ROBOT_VACUUM_DPS_PROFILES[str(dps_id)]
+            self._attr_device_class = dc
+            self._attr_native_unit_of_measurement = explicit_unit or unit
+            self._attr_state_class = sc
+            return
+
+        # 3. Perfil basado en el ID / nombre del DPS
         dps_name = str(dps_id).lower()
         if dps_name in _DPS_PROFILES:
             dc, unit, sc = _DPS_PROFILES[dps_name]
@@ -169,8 +183,7 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             self._attr_state_class = sc
             return
 
-        # 3. Perfil basado en device_type del config
-        device_type = (config.get("device_type") or "").lower()
+        # 4. Perfil basado en device_type del config
         if device_type in _SENSOR_PROFILES:
             dc, unit, sc = _SENSOR_PROFILES[device_type]
             self._attr_device_class = dc
