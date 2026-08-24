@@ -44,6 +44,13 @@ _OUTLET_DPS_LABELS = {
     "20": "Voltaje",
 }
 
+_ENERGY_DPS_LABELS = {
+    "17": "Energía",
+    "18": "Corriente",
+    "19": "Potencia",
+    "20": "Voltaje",
+}
+
 _SWITCH_DPS_LABELS = {
     "1": "Canal 1",
     "2": "Canal 2",
@@ -121,9 +128,9 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
         standard_label = _SWITCH_DPS_LABELS.get(dps_id)
         if standard_label:
             return standard_label
-        standard_label = _SWITCH_DPS_LABELS.get(dps_id)
-        if standard_label:
-            return standard_label
+
+    if dps_id in _ENERGY_DPS_LABELS:
+        return _ENERGY_DPS_LABELS[dps_id]
 
     return f"DPS {dps_id}"
 

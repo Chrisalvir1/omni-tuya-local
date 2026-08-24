@@ -424,8 +424,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         
         if device_id not in self.data["dps"]:
             self.data["dps"][device_id] = {}
-            
-        import time
+
         t = time.time()
         dps_copy = dict(dps)
         dps_copy["_push_time"] = t

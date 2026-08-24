@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from homeassistant.components.humidifier import HumidifierEntity
+from homeassistant.components.humidifier import HumidifierDeviceClass, HumidifierEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -30,6 +30,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class OmniTuyaHumidifier(OmniTuyaEntity, HumidifierEntity):
+    _attr_min_humidity = 30
+    _attr_max_humidity = 80
+
+    def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict) -> None:
+        super().__init__(coordinator, config, "1")
+        device_type = (config.get("device_type") or "").lower()
+        if device_type == "dehumidifier":
+            self._attr_device_class = HumidifierDeviceClass.DEHUMIDIFIER
+        else:
+            self._attr_device_class = HumidifierDeviceClass.HUMIDIFIER
+
     @property
     def name(self) -> str:
         return self.config.get("name") or self.device_id

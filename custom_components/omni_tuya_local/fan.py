@@ -124,6 +124,9 @@ class OmniTuyaFan(OmniTuyaEntity, FanEntity):
         await self.coordinator.async_set_status(self.device_id, False, 1)
 
     async def async_set_percentage(self, percentage: int) -> None:
+        if percentage == 0:
+            await self.async_turn_off()
+            return
         if not self._has_speed_dps():
             return
         speed_str = percentage_to_ordered_list_item(_SPEED_ORDERED, percentage)

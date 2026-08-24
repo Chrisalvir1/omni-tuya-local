@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 from datetime import timedelta
@@ -139,7 +140,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.data[DOMAIN]["_cloud_sync_scheduled"] = True
 
                 async def _background_sync() -> None:
-                    import asyncio
                     await asyncio.sleep(5)
                     try:
                         await hass.services.async_call(DOMAIN, SERVICE_SYNC_CLOUD, {})
@@ -189,6 +189,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for value in hass.data[DOMAIN].values()
         ):
             hass.data[DOMAIN].pop("_global_sync_button_added", None)
+            hass.data[DOMAIN].pop("_cloud_sync_scheduled", None)
+            cloud_sync_unsub = hass.data[DOMAIN].pop("_cloud_sync_unsub", None)
+            if cloud_sync_unsub:
+                cloud_sync_unsub()
     return unload_ok
 
 

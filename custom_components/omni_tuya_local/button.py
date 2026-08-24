@@ -5,6 +5,7 @@ from typing import Any
 
 from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
@@ -153,6 +154,7 @@ class OmniTuyaSyncCloudButton(ButtonEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:cloud-sync"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, entry_id: str) -> None:
         self.coordinator = coordinator

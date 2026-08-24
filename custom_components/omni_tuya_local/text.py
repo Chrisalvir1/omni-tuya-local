@@ -6,6 +6,7 @@ from typing import Any
 
 from homeassistant.components.text import TextEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -44,6 +45,7 @@ class TuyaIpTextEntity(TextEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:ip-network"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, device_id: str, config: dict[str, Any]) -> None:
         """Initialize the text entity."""

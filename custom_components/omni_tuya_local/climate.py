@@ -129,7 +129,12 @@ class OmniTuyaClimate(OmniTuyaEntity, ClimateEntity):
     async def async_set_temperature(self, **kwargs) -> None:
         if "temperature" in kwargs:
             val = kwargs["temperature"]
-            await self.coordinator.async_set_value(self.device_id, int(_DPS_TEMP_TARGET), int(val))
+            raw_target = self.dps(_DPS_TEMP_TARGET)
+            try:
+                send_val = int(val * 10) if raw_target is not None and float(raw_target) > 100 else int(val)
+            except (TypeError, ValueError):
+                send_val = int(val)
+            await self.coordinator.async_set_value(self.device_id, int(_DPS_TEMP_TARGET), send_val)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         if hvac_mode == HVACMode.OFF:

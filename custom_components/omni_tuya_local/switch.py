@@ -77,9 +77,54 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         return value is True or value == "on"
 
     @property
+    def current_power_w(self) -> float | None:
+        """Return current power consumption in watts."""
+        val = self.dps("19") or self.dps("cur_power")
+        if val is not None:
+            try:
+                return round(float(val) / 10.0, 1)
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    @property
     def extra_state_attributes(self) -> dict:
         attrs = super().extra_state_attributes
         attrs["homekit_type"] = self._homekit_type
+
+        # Telemetría de energía para HomeKit (Eve Energy / Home+) y Home Assistant
+        power_val = self.dps("19") or self.dps("cur_power")
+        if power_val is not None:
+            try:
+                attrs["current_power_w"] = round(float(power_val) / 10.0, 1)
+            except (TypeError, ValueError):
+                pass
+
+        voltage_val = self.dps("20") or self.dps("cur_voltage")
+        if voltage_val is not None:
+            try:
+                v = float(voltage_val)
+                attrs["voltage"] = round(v / 10.0, 1) if v > 500 else round(v, 1)
+            except (TypeError, ValueError):
+                pass
+
+        current_val = self.dps("18") or self.dps("cur_current")
+        if current_val is not None:
+            try:
+                c = float(current_val)
+                attrs["current_a"] = round(c / 1000.0, 3)
+                attrs["current_ma"] = round(c, 1)
+            except (TypeError, ValueError):
+                pass
+
+        energy_val = self.dps("17") or self.dps("add_ele")
+        if energy_val is not None:
+            try:
+                e = float(energy_val)
+                attrs["total_energy_kwh"] = round(e / 100.0, 3) if e > 500 else round(e, 3)
+            except (TypeError, ValueError):
+                pass
+
         return attrs
 
     async def async_turn_on(self, **kwargs) -> None:

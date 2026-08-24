@@ -1,0 +1,55 @@
+name: Validate Integration
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  validate-hassfest:
+    name: Validate Hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Hassfest validation
+        uses: home-assistant/actions/hassfest@master
+
+  validate-hacs:
+    name: Validate HACS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: HACS Action
+        uses: hacs/action@main
+        with:
+          category: integration
+
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install tinytuya
+
+      - name: Run unit tests
+        run: |
+          python -m unittest discover -s tests -v

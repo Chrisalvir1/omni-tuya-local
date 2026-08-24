@@ -84,12 +84,34 @@ _ROBOT_VACUUM_DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None
     "17": (SensorDeviceClass.DURATION, "min", SensorStateClass.MEASUREMENT),
 }
 
+from .pet_feeder import function_id
+
 _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]] = {
     # Telemetría estándar consumo tomacorrientes / interruptores inteligentes (cz, pc, sp)
     "17": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
     "18": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
     "19": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
     "20": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, SensorStateClass.MEASUREMENT),
+    # Códigos Tuya Cloud y variantes de energía
+    "cur_power": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
+    "cur_power_1": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
+    "cur_power_2": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
+    "cur_power_3": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
+    "cur_power_4": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
+    "power": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
+    "cur_current": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
+    "cur_current_1": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
+    "cur_current_2": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
+    "cur_current_3": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
+    "cur_current_4": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
+    "current": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
+    "cur_voltage": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, SensorStateClass.MEASUREMENT),
+    "voltage": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, SensorStateClass.MEASUREMENT),
+    "add_ele": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
+    "add_ele_1": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
+    "add_ele_2": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
+    "energy": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
+    "total_forward_energy": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
     # Sensor temp+humedad estándar Tuya (wsdcg)
     "temp": (SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT),
     "hum": (SensorDeviceClass.HUMIDITY, PERCENTAGE, SensorStateClass.MEASUREMENT),
@@ -98,10 +120,8 @@ _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorState
     "illuminance": (SensorDeviceClass.ILLUMINANCE, "lx", SensorStateClass.MEASUREMENT),
     "co2": (SensorDeviceClass.CO2, _UNIT_PPM, SensorStateClass.MEASUREMENT),
     "pm25": (SensorDeviceClass.PM25, _UNIT_UG_M3, SensorStateClass.MEASUREMENT),
-    "cur_power": (SensorDeviceClass.POWER, UnitOfPower.WATT, SensorStateClass.MEASUREMENT),
-    "cur_current": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.MILLIAMPERE, SensorStateClass.MEASUREMENT),
-    "cur_voltage": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, SensorStateClass.MEASUREMENT),
-    "add_ele": (SensorDeviceClass.ENERGY, UnitOfEnergy.KILO_WATT_HOUR, SensorStateClass.TOTAL_INCREASING),
+    "battery": (SensorDeviceClass.BATTERY, PERCENTAGE, SensorStateClass.MEASUREMENT),
+    "battery_percentage": (SensorDeviceClass.BATTERY, PERCENTAGE, SensorStateClass.MEASUREMENT),
 }
 
 
@@ -113,31 +133,77 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities = []
         for config in coordinator.store.all().values():
             configured_dps: set[str] = set()
-            if config.get("domain") != "sensor":
-                dps_map = {}
-            else:
-                dps_map = config.get("dps_map") or {
-                    "1": {"name": config.get("name"), "unit": None}
-                }
-                for dps_id, desc in dps_map.items():
-                    dps_id = str(dps_id)
-                    configured_dps.add(dps_id)
-                    uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"
+            dps_map = config.get("dps_map") or {}
+
+            # 1. Procesar sensores definidos en dps_map
+            if config.get("domain") == "sensor" and not dps_map:
+                dps_map = {"1": {"name": config.get("name"), "unit": None}}
+
+            for dps_id, desc in dps_map.items():
+                dps_id = str(dps_id)
+                if not dps_id.isdigit():
+                    continue
+                configured_dps.add(dps_id)
+                uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"
+                if uid not in _known_unique_ids:
+                    _known_unique_ids.add(uid)
+                    entities.append(
+                        OmniTuyaSensor(
+                            coordinator, config, dps_id,
+                            desc if isinstance(desc, dict) else {}
+                        )
+                    )
+
+            # 2. Extraer sensores de energía y funciones desde Tuya Cloud (tuya_functions)
+            raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+            if not raw_dps and coordinator.devices.get(config.get("device_id")):
+                raw_dps = coordinator.devices[config.get("device_id")].dps
+
+            tuya_functions = config.get("tuya_functions") or []
+            for func in tuya_functions:
+                if not isinstance(func, dict):
+                    continue
+                dp_id = function_id(func)
+                if not dp_id or dp_id in configured_dps:
+                    continue
+                code = str(func.get("code") or func.get("identifier") or "").lower()
+                func_type = str(func.get("type") or "").lower()
+                is_sensor_func = (
+                    code in _DPS_PROFILES
+                    or any(k in code for k in ("power", "voltage", "current", "energy", "temp", "hum", "co2", "pm25", "lux", "battery"))
+                    or func_type in ("integer", "value", "numeric")
+                )
+                if is_sensor_func and not code.startswith("switch") and code not in ("mode", "count_down"):
+                    configured_dps.add(dp_id)
+                    lbl = func.get("name") or func.get("code")
+                    name = str(lbl).replace("_", " ").strip().title() if lbl else dps_label(config, dp_id)
+                    uid = f"{DOMAIN}_{config['device_id']}_dps_{dp_id}"
                     if uid not in _known_unique_ids:
                         _known_unique_ids.add(uid)
                         entities.append(
                             OmniTuyaSensor(
-                                coordinator, config, dps_id,
-                                desc if isinstance(desc, dict) else {}
+                                coordinator, config, dp_id, {"name": name, "code": code}
                             )
                         )
 
-            # Every numeric/text value actually observed on the LAN is exposed
-            # read-only.  Unknown Tuya DPS are deliberately sensors, not
-            # controls, so a product-specific command is never guessed.
+            # 3. Telemetría de energía observada en raw_dps (17=energía, 18=corriente, 19=potencia, 20=voltaje)
+            for energy_dp in ("17", "18", "19", "20"):
+                if energy_dp in raw_dps and energy_dp not in configured_dps:
+                    configured_dps.add(energy_dp)
+                    uid = f"{DOMAIN}_{config['device_id']}_dps_{energy_dp}"
+                    if uid not in _known_unique_ids:
+                        _known_unique_ids.add(uid)
+                        entities.append(
+                            OmniTuyaSensor(
+                                coordinator, config, energy_dp, {"name": dps_label(config, energy_dp)}
+                            )
+                        )
+
+            # 4. Todos los valores numéricos/texto observados en LAN (discovered_dps)
             for dps_id, info in discovered_dps(config).items():
                 if info["kind"] not in {"number", "text"} or dps_id in configured_dps:
                     continue
+                configured_dps.add(dps_id)
                 uid = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}"
                 if uid not in _known_unique_ids:
                     _known_unique_ids.add(uid)
@@ -146,6 +212,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                             coordinator, config, dps_id, {"name": info["name"]}
                         )
                     )
+
         if entities:
             async_add_entities(entities)
 
@@ -184,10 +251,20 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             self._attr_state_class = sc
             return
 
-        # 3. Perfil basado en el ID / nombre del DPS
+        # 3. Perfil basado en el ID / nombre / código del DPS
         dps_name = str(dps_id).lower()
-        if dps_name in _DPS_PROFILES:
-            dc, unit, sc = _DPS_PROFILES[dps_name]
+        desc_code = str(desc.get("code") or "").lower()
+        match_key = dps_name if dps_name in _DPS_PROFILES else (desc_code if desc_code in _DPS_PROFILES else None)
+        if not match_key:
+            for func in config.get("tuya_functions") or []:
+                if isinstance(func, dict) and function_id(func) == str(dps_id):
+                    code = str(func.get("code") or func.get("identifier") or "").lower()
+                    if code in _DPS_PROFILES:
+                        match_key = code
+                        break
+
+        if match_key and match_key in _DPS_PROFILES:
+            dc, unit, sc = _DPS_PROFILES[match_key]
             self._attr_device_class = dc
             self._attr_native_unit_of_measurement = explicit_unit or unit
             self._attr_state_class = sc
@@ -201,7 +278,7 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             self._attr_state_class = sc
             return
 
-        # 4. Perfil basado en categoría Tuya
+        # 5. Perfil basado en categoría Tuya
         category = (config.get("category") or "").lower()
         profile_key = _CATEGORY_PROFILES.get(category)
         if profile_key and profile_key in _SENSOR_PROFILES:
@@ -211,7 +288,7 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             self._attr_state_class = sc
             return
 
-        # 5. Fallback: unidad del desc o None
+        # 6. Fallback: unidad del desc o None
         self._attr_device_class = None
         self._attr_native_unit_of_measurement = explicit_unit
         self._attr_state_class = SensorStateClass.MEASUREMENT if explicit_unit else None
@@ -242,17 +319,23 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
         # Si es potencia y viene en décimas de W
         if self._attr_device_class == SensorDeviceClass.POWER:
             try:
-                return float(value) / 10
+                return round(float(value) / 10.0, 1)
             except (TypeError, ValueError):
                 return value
         # Si es voltaje y viene en décimas de V
         if self._attr_device_class == SensorDeviceClass.VOLTAGE:
             try:
                 v = float(value)
-                return v / 10 if v > 500 else v
+                return round(v / 10.0, 1) if v > 500 else round(v, 1)
             except (TypeError, ValueError):
                 return value
-        # Si es energía acumulada
+        # Si es corriente eléctrica (mA)
+        if self._attr_device_class == SensorDeviceClass.CURRENT:
+            try:
+                return round(float(value), 1)
+            except (TypeError, ValueError):
+                return value
+        # Si es energía acumulada (kWh)
         if self._attr_device_class == SensorDeviceClass.ENERGY:
             try:
                 v = float(value)
