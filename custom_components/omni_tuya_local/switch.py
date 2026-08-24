@@ -44,6 +44,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     await add_new_entities()
 
 
+def _first_valid_dps(entity: OmniTuyaEntity, *keys: str | int) -> Any:
+    for k in keys:
+        val = entity.dps(k)
+        if val is not None:
+            return val
+    return None
+
+
 class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
     def __init__(
         self,
@@ -79,7 +87,7 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
     @property
     def current_power_w(self) -> float | None:
         """Return current power consumption in watts."""
-        val = self.dps("19") or self.dps("cur_power")
+        val = _first_valid_dps(self, "19", "cur_power", "power", "cur_power_1")
         if val is not None:
             try:
                 return round(float(val) / 10.0, 1)
@@ -93,14 +101,16 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         attrs["homekit_type"] = self._homekit_type
 
         # Telemetría de energía para HomeKit (Eve Energy / Home+) y Home Assistant
-        power_val = self.dps("19") or self.dps("cur_power")
+        power_val = _first_valid_dps(self, "19", "cur_power", "power", "cur_power_1")
         if power_val is not None:
             try:
-                attrs["current_power_w"] = round(float(power_val) / 10.0, 1)
+                p = round(float(power_val) / 10.0, 1)
+                attrs["current_power_w"] = p
+                attrs["power"] = p
             except (TypeError, ValueError):
                 pass
 
-        voltage_val = self.dps("20") or self.dps("cur_voltage")
+        voltage_val = _first_valid_dps(self, "20", "cur_voltage", "voltage")
         if voltage_val is not None:
             try:
                 v = float(voltage_val)
@@ -108,20 +118,22 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
             except (TypeError, ValueError):
                 pass
 
-        current_val = self.dps("18") or self.dps("cur_current")
+        current_val = _first_valid_dps(self, "18", "cur_current", "current", "cur_current_1")
         if current_val is not None:
             try:
                 c = float(current_val)
                 attrs["current_a"] = round(c / 1000.0, 3)
                 attrs["current_ma"] = round(c, 1)
+                attrs["current"] = attrs["current_a"]
             except (TypeError, ValueError):
                 pass
 
-        energy_val = self.dps("17") or self.dps("add_ele")
+        energy_val = _first_valid_dps(self, "17", "add_ele", "energy", "total_forward_energy", "add_ele_1")
         if energy_val is not None:
             try:
                 e = float(energy_val)
                 attrs["total_energy_kwh"] = round(e / 100.0, 3) if e > 500 else round(e, 3)
+                attrs["energy"] = attrs["total_energy_kwh"]
             except (TypeError, ValueError):
                 pass
 

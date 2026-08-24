@@ -71,8 +71,29 @@ for mod_name in [
             sys.modules[mod_name] = MagicMock()
 
 # Override base classes to avoid metaclass conflicts
+for comp in [
+    "sensor",
+    "switch",
+    "light",
+    "button",
+    "climate",
+    "fan",
+    "humidifier",
+    "number",
+    "select",
+    "text",
+    "vacuum",
+    "binary_sensor",
+]:
+    m = sys.modules[f"homeassistant.components.{comp}"]
+    for attr in [
+        "SensorEntity", "SwitchEntity", "LightEntity", "ButtonEntity",
+        "ClimateEntity", "FanEntity", "HumidifierEntity", "NumberEntity",
+        "SelectEntity", "TextEntity", "StateVacuumEntity", "BinarySensorEntity"
+    ]:
+        setattr(m, attr, DummyEntity)
+
 sensor_mod = sys.modules["homeassistant.components.sensor"]
-sensor_mod.SensorEntity = DummyEntity
 
 class SensorDeviceClass:
     BATTERY = "battery"

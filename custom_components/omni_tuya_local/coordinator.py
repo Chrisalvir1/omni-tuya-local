@@ -440,8 +440,23 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def get_device_config(self, device_id: str) -> dict[str, Any] | None:
         return self.store.get(device_id)
 
-    def dps_value(self, device_id: str, dps_id: str = "1") -> Any:
-        return (self.data or {}).get("dps", {}).get(device_id, {}).get(str(dps_id))
+    def dps_value(self, device_id: str, dps_id: str | int = "1") -> Any:
+        dev_dps = (self.data or {}).get("dps", {}).get(device_id)
+        if dev_dps is None and device_id in self.devices:
+            dev_dps = self.devices[device_id].dps
+        if not dev_dps or not isinstance(dev_dps, dict):
+            return None
+
+        str_id = str(dps_id)
+        if str_id in dev_dps:
+            return dev_dps[str_id]
+        try:
+            int_id = int(dps_id)
+            if int_id in dev_dps:
+                return dev_dps[int_id]
+        except (ValueError, TypeError):
+            pass
+        return None
 
     def is_available(self, device_id: str) -> bool:
         return bool((self.data or {}).get("available", {}).get(device_id))

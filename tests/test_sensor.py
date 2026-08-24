@@ -95,5 +95,40 @@ class TestSensor(unittest.TestCase):
         self.assertEqual(sensor.native_value, 25.5)
 
 
+    def test_is_energy_capable_device(self):
+        from custom_components.omni_tuya_local.sensor import _is_energy_capable_device
+
+        # Outlets and switches
+        self.assertTrue(_is_energy_capable_device({"category": "cz"}, {}))
+        self.assertTrue(_is_energy_capable_device({"category": "pc"}, {}))
+        self.assertTrue(_is_energy_capable_device({"device_type": "outlet"}, {}))
+        self.assertTrue(_is_energy_capable_device({"product_name": "Smart Plug Duo"}, {}))
+        self.assertTrue(_is_energy_capable_device({}, {"19": 100}))
+        self.assertTrue(_is_energy_capable_device({}, {19: 100}))
+
+        # Non-energy devices
+        self.assertFalse(_is_energy_capable_device({"domain": "light", "device_type": "light"}, {}))
+
+    def test_switch_energy_attributes_with_zero_values(self):
+        from custom_components.omni_tuya_local.switch import OmniTuyaSwitch
+        
+        config = {
+            "device_id": "plug_1",
+            "name": "Smart Plug",
+            "domain": "switch",
+            "device_type": "outlet",
+        }
+        sw = OmniTuyaSwitch(self.coordinator, config, "1")
+        
+        # When device reports 0 watts (DPS 19 = 0)
+        self.coordinator.dps_value.side_effect = lambda dev_id, dps_id: 0 if str(dps_id) in ("19", "20", "18", "17") else None
+        self.assertEqual(sw.current_power_w, 0.0)
+        attrs = sw.extra_state_attributes
+        self.assertEqual(attrs.get("current_power_w"), 0.0)
+        self.assertEqual(attrs.get("voltage"), 0.0)
+        self.assertEqual(attrs.get("current_a"), 0.0)
+        self.assertEqual(attrs.get("total_energy_kwh"), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

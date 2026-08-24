@@ -125,6 +125,29 @@ _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorState
 }
 
 
+def _is_energy_capable_device(config: dict[str, Any], raw_dps: dict[str, Any]) -> bool:
+    dev_type = str(config.get("device_type") or "").lower()
+    cat = str(config.get("category") or "").lower()
+    domain = str(config.get("domain") or "").lower()
+    product = str(config.get("product_name") or "").lower()
+    name = str(config.get("name") or "").lower()
+
+    if cat in ("cz", "pc", "sp", "dlq", "tdq"):
+        return True
+    if dev_type in ("outlet", "power_strip"):
+        return True
+    if any(w in product or w in name for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo", "relay", "breaker", "medidor")):
+        return True
+    if any(k in raw_dps or str(k) in config.get("discovered_dps", {}) for k in ("17", "18", "19", "20", 17, 18, 19, 20)):
+        return True
+    for func in config.get("tuya_functions") or []:
+        if isinstance(func, dict):
+            code = str(func.get("code") or func.get("identifier") or "").lower()
+            if any(k in code for k in ("cur_power", "cur_voltage", "cur_current", "add_ele", "power", "energy", "voltage", "current")):
+                return True
+    return False
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     coordinator: OmniTuyaLocalCoordinator = hass.data[DOMAIN][entry.entry_id]
     _known_unique_ids: set[str] = set()
@@ -158,6 +181,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
             if not raw_dps and coordinator.devices.get(config.get("device_id")):
                 raw_dps = coordinator.devices[config.get("device_id")].dps
+            if not isinstance(raw_dps, dict):
+                raw_dps = {}
 
             tuya_functions = config.get("tuya_functions") or []
             for func in tuya_functions:
@@ -186,18 +211,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                             )
                         )
 
-            # 3. Telemetría de energía observada en raw_dps (17=energía, 18=corriente, 19=potencia, 20=voltaje)
-            for energy_dp in ("17", "18", "19", "20"):
-                if energy_dp in raw_dps and energy_dp not in configured_dps:
-                    configured_dps.add(energy_dp)
-                    uid = f"{DOMAIN}_{config['device_id']}_dps_{energy_dp}"
-                    if uid not in _known_unique_ids:
-                        _known_unique_ids.add(uid)
-                        entities.append(
-                            OmniTuyaSensor(
-                                coordinator, config, energy_dp, {"name": dps_label(config, energy_dp)}
+            # 3. Telemetría de energía estándar para dispositivos compatibles (enchufes, regletas, relés, etc.)
+            if _is_energy_capable_device(config, raw_dps):
+                for energy_dp, default_name, code in (
+                    ("19", "Potencia", "cur_power"),
+                    ("20", "Voltaje", "cur_voltage"),
+                    ("18", "Corriente", "cur_current"),
+                    ("17", "Energía", "add_ele"),
+                ):
+                    if energy_dp not in configured_dps:
+                        configured_dps.add(energy_dp)
+                        uid = f"{DOMAIN}_{config['device_id']}_dps_{energy_dp}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(
+                                OmniTuyaSensor(
+                                    coordinator, config, energy_dp, {"name": default_name, "code": code}
+                                )
                             )
-                        )
 
             # 4. Todos los valores numéricos/texto observados en LAN (discovered_dps)
             for dps_id, info in discovered_dps(config).items():
@@ -300,6 +331,14 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
         label = dps_label(self.config, self.dps_id)
         if label and label != f"DPS {self.dps_id}":
             return label
+        if str(self.dps_id) == "19":
+            return "Potencia"
+        if str(self.dps_id) == "20":
+            return "Voltaje"
+        if str(self.dps_id) == "18":
+            return "Corriente"
+        if str(self.dps_id) == "17":
+            return "Energía"
         if self.dps_id == "1":
             return None
         return f"Sensor {self.dps_id}"
@@ -307,6 +346,16 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
     @property
     def native_value(self):
         value = self.dps(self.dps_id)
+        if value is None and self._desc.get("code"):
+            value = self.dps(self._desc["code"])
+        if value is None:
+            for func in self.config.get("tuya_functions") or []:
+                if isinstance(func, dict) and str(function_id(func)) == str(self.dps_id):
+                    code = func.get("code") or func.get("identifier")
+                    if code:
+                        value = self.dps(code)
+                        if value is not None:
+                            break
         if value is None:
             return None
         # Si el device_class es temperatura y el valor viene en décimas, convertir
