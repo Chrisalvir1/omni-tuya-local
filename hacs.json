@@ -2,6 +2,5 @@
   "name": "Omni Tuya Local",
   "render_readme": true,
   "homeassistant": "2026.7.1",
-  "hacs": "2.0.0",
-  "logo": "https://raw.githubusercontent.com/Chrisalvir1/omni-tuya-local/main/logo.png"
+  "hacs": "2.0.0"
 }
