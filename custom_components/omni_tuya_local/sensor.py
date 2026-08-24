@@ -202,7 +202,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     configured_dps.add(dp_id)
                     lbl = func.get("name") or func.get("code")
                     name = str(lbl).replace("_", " ").strip().title() if lbl else dps_label(config, dp_id)
-                    uid = f"{DOMAIN}_{config['device_id']}_dps_{dp_id}"
+                    uid = f"{DOMAIN}_{config['device_id']}_{dp_id}"
                     if uid not in _known_unique_ids:
                         _known_unique_ids.add(uid)
                         entities.append(
@@ -221,7 +221,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 ):
                     if energy_dp not in configured_dps:
                         configured_dps.add(energy_dp)
-                        uid = f"{DOMAIN}_{config['device_id']}_dps_{energy_dp}"
+                        uid = f"{DOMAIN}_{config['device_id']}_{energy_dp}"
                         if uid not in _known_unique_ids:
                             _known_unique_ids.add(uid)
                             entities.append(
@@ -235,7 +235,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 if info["kind"] not in {"number", "text"} or dps_id in configured_dps:
                     continue
                 configured_dps.add(dps_id)
-                uid = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}"
+                uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"
                 if uid not in _known_unique_ids:
                     _known_unique_ids.add(uid)
                     entities.append(
@@ -257,6 +257,7 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict, dps_id: str, desc: dict) -> None:
         super().__init__(coordinator, config, dps_id)
         self._desc = desc
+        self._attr_unique_id = f"{DOMAIN}_{config['device_id']}_{dps_id}"
         self._resolve_class_and_unit(config, dps_id, desc)
 
     def _resolve_class_and_unit(self, config: dict, dps_id: str, desc: dict) -> None:

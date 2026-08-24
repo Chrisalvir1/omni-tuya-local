@@ -71,26 +71,25 @@ for mod_name in [
             sys.modules[mod_name] = MagicMock()
 
 # Override base classes to avoid metaclass conflicts
-for comp in [
-    "sensor",
-    "switch",
-    "light",
-    "button",
-    "climate",
-    "fan",
-    "humidifier",
-    "number",
-    "select",
-    "text",
-    "vacuum",
-    "binary_sensor",
+for comp, entity_names in [
+    ("sensor", ["SensorEntity"]),
+    ("switch", ["SwitchEntity"]),
+    ("light", ["LightEntity"]),
+    ("button", ["ButtonEntity"]),
+    ("climate", ["ClimateEntity"]),
+    ("fan", ["FanEntity"]),
+    ("humidifier", ["HumidifierEntity"]),
+    ("number", ["NumberEntity"]),
+    ("select", ["SelectEntity"]),
+    ("text", ["TextEntity"]),
+    ("vacuum", ["StateVacuumEntity"]),
+    ("binary_sensor", ["BinarySensorEntity"]),
+    ("cover", ["CoverEntity"]),
+    ("lock", ["LockEntity"]),
+    ("alarm_control_panel", ["AlarmControlPanelEntity"]),
 ]:
     m = sys.modules[f"homeassistant.components.{comp}"]
-    for attr in [
-        "SensorEntity", "SwitchEntity", "LightEntity", "ButtonEntity",
-        "ClimateEntity", "FanEntity", "HumidifierEntity", "NumberEntity",
-        "SelectEntity", "TextEntity", "StateVacuumEntity", "BinarySensorEntity"
-    ]:
+    for attr in entity_names:
         setattr(m, attr, DummyEntity)
 
 sensor_mod = sys.modules["homeassistant.components.sensor"]
