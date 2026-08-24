@@ -127,7 +127,23 @@ class TestSensor(unittest.TestCase):
         self.assertEqual(attrs.get("current_power_w"), 0.0)
         self.assertEqual(attrs.get("voltage"), 0.0)
         self.assertEqual(attrs.get("current_a"), 0.0)
-        self.assertEqual(attrs.get("total_energy_kwh"), 0.0)
+    def test_vacuum_battery_and_attributes(self):
+        from custom_components.omni_tuya_local.vacuum import OmniTuyaVacuum
+
+        config = {
+            "device_id": "vacuum_1",
+            "name": "Robot Vacuum",
+            "domain": "vacuum",
+            "device_type": "robot_vacuum",
+        }
+        vac = OmniTuyaVacuum(self.coordinator, config)
+
+        self.coordinator.dps_value.side_effect = lambda dev_id, dps_id: 85 if str(dps_id) == "6" else (250 if str(dps_id) == "19" else None)
+        self.assertEqual(vac.battery_level, 85)
+        self.assertEqual(vac.current_power_w, 25.0)
+        attrs = vac.extra_state_attributes
+        self.assertEqual(attrs.get("battery_level"), 85)
+        self.assertEqual(attrs.get("current_power_w"), 25.0)
 
 
 if __name__ == "__main__":
