@@ -140,7 +140,13 @@ def _is_energy_capable_device(config: dict[str, Any], raw_dps: dict[str, Any]) -
     for func in config.get("tuya_functions") or []:
         if isinstance(func, dict):
             code = str(func.get("code") or func.get("identifier") or "").lower()
-            if any(k in code for k in ("cur_power", "cur_voltage", "cur_current", "add_ele", "power", "energy", "voltage", "current")):
+            if code in ("cur_power", "cur_voltage", "cur_current", "add_ele", "phase_a"):
+                return True
+    # Si reporta DPS 17-20 con valores numéricos válidos (ej. enchufe o medidor sin metadata)
+    if isinstance(raw_dps, dict):
+        for dp_key in ("17", "18", "19", "20", 17, 18, 19, 20):
+            val = raw_dps.get(dp_key)
+            if val is not None and isinstance(val, (int, float)) and not isinstance(val, bool):
                 return True
     return False
 
