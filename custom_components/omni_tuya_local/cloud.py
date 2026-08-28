@@ -41,8 +41,20 @@ async def async_fetch_cloud_devices(
     api_region: str,
     device_id: str = "",
 ) -> list[dict[str, Any]]:
+    api_key = str(api_key or "").strip()
+    api_secret = str(api_secret or "").strip()
+    api_region = str(api_region or "").strip().lower()
+    device_id = str(device_id or "").strip()
+
     def _sync_fetch() -> list[dict[str, Any]]:
         import tinytuya
+
+        _LOGGER.info(
+            "Conectando a Tuya Cloud (region=%s, apiKey=%s..., device_id=%s)",
+            api_region,
+            api_key[:6] if len(api_key) >= 6 else "***",
+            device_id or "ninguno",
+        )
 
         def _error_detail(payload: Any) -> str:
             """Normalize TinyTuya's two error response formats."""
@@ -68,7 +80,22 @@ async def async_fetch_cloud_devices(
             )
 
         cloud = _cloud_with_id(device_id or None)
-        devices = cloud.getdevices()
+        devices = None
+
+        # Si device_id es un UID de usuario (o varios separados por coma, ej. eu1621898281305Wo1vo)
+        if device_id and any(device_id.startswith(pfx) for pfx in ("eu", "us", "cn", "in", "az", "ay")):
+            uids = [u.strip() for u in device_id.split(",") if u.strip()]
+            all_user_devs = []
+            for uid in uids:
+                req = cloud.cloudrequest(f"/v1.0/users/{uid}/devices")
+                if isinstance(req, dict) and isinstance(req.get("result"), list):
+                    all_user_devs.extend(req["result"])
+            if all_user_devs:
+                devices = all_user_devs
+
+        if devices is None:
+            devices = cloud.getdevices()
+        _LOGGER.info("Respuesta de Tuya Cloud getdevices(): %s", type(devices).__name__)
         # A virtual ID can be stale, belong to another Tuya project, or be
         # unavailable to this API client.  Try the project-wide device lookup
         # before failing the whole sync; it works for linked Smart Life

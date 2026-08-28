@@ -128,7 +128,6 @@ _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorState
 def _is_energy_capable_device(config: dict[str, Any], raw_dps: dict[str, Any]) -> bool:
     dev_type = str(config.get("device_type") or "").lower()
     cat = str(config.get("category") or "").lower()
-    domain = str(config.get("domain") or "").lower()
     product = str(config.get("product_name") or "").lower()
     name = str(config.get("name") or "").lower()
 
@@ -136,9 +135,7 @@ def _is_energy_capable_device(config: dict[str, Any], raw_dps: dict[str, Any]) -
         return True
     if dev_type in ("outlet", "power_strip"):
         return True
-    if any(w in product or w in name for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo", "relay", "breaker", "medidor")):
-        return True
-    if any(k in raw_dps or str(k) in config.get("discovered_dps", {}) for k in ("17", "18", "19", "20", 17, 18, 19, 20)):
+    if any(w in product or w in name for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo", "breaker", "medidor")):
         return True
     for func in config.get("tuya_functions") or []:
         if isinstance(func, dict):
@@ -286,7 +283,17 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
         # 3. Perfil basado en el ID / nombre / código del DPS
         dps_name = str(dps_id).lower()
         desc_code = str(desc.get("code") or "").lower()
-        match_key = dps_name if dps_name in _DPS_PROFILES else (desc_code if desc_code in _DPS_PROFILES else None)
+        match_key = None
+        if desc_code and desc_code in _DPS_PROFILES:
+            match_key = desc_code
+        elif dps_name in ("17", "18", "19", "20"):
+            # Solo asignar perfil de energía si el dispositivo es capaz de medir energía
+            raw_dps = (self.coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+            if _is_energy_capable_device(config, raw_dps):
+                match_key = dps_name
+        elif dps_name in _DPS_PROFILES:
+            match_key = dps_name
+
         if not match_key:
             for func in config.get("tuya_functions") or []:
                 if isinstance(func, dict) and function_id(func) == str(dps_id):
@@ -359,6 +366,13 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
                             break
         if value is None:
             return None
+
+        # Limpiar strings vacíos o nulos
+        if isinstance(value, str):
+            val_clean = value.strip()
+            if not val_clean or val_clean.lower() in ("none", "null", "unknown", "unavailable"):
+                return None
+
         # Si el device_class es temperatura y el valor viene en décimas, convertir
         if self._attr_device_class == SensorDeviceClass.TEMPERATURE:
             try:
@@ -371,20 +385,20 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             try:
                 return round(float(value) / 10.0, 1)
             except (TypeError, ValueError):
-                return value
+                return None
         # Si es voltaje y viene en décimas de V
         if self._attr_device_class == SensorDeviceClass.VOLTAGE:
             try:
                 v = float(value)
                 return round(v / 10.0, 1) if v > 500 else round(v, 1)
             except (TypeError, ValueError):
-                return value
+                return None
         # Si es corriente eléctrica (mA)
         if self._attr_device_class == SensorDeviceClass.CURRENT:
             try:
                 return round(float(value), 1)
             except (TypeError, ValueError):
-                return value
+                return None
         # Si es energía acumulada (kWh)
         if self._attr_device_class == SensorDeviceClass.ENERGY:
             try:
@@ -394,5 +408,18 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
                     return round(v / 100.0, 3)
                 return round(v, 3)
             except (TypeError, ValueError):
-                return value
+                return None
+
+        # Para cualquier sensor con unidad de medida o clase de estado numérica, validar que sea convertible
+        if (
+            self._attr_state_class is not None
+            or self._attr_native_unit_of_measurement is not None
+            or self._attr_device_class is not None
+        ):
+            try:
+                v = float(value)
+                return int(v) if v.is_integer() else v
+            except (TypeError, ValueError):
+                return None
+
         return value

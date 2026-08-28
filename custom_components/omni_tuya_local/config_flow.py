@@ -183,36 +183,49 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         
         if user_input is not None:
+            clean_api_key = str(user_input.get(CONF_API_KEY, "")).strip()
+            clean_api_secret = str(user_input.get(CONF_API_SECRET, "")).strip()
+            clean_region = str(user_input.get(CONF_REGION, DEFAULT_REGION)).strip().lower()
+            clean_device_id = str(user_input.get(CONF_DEVICE_ID, "")).strip()
+
+            cleaned_input = dict(user_input)
+            cleaned_input[CONF_API_KEY] = clean_api_key
+            cleaned_input[CONF_API_SECRET] = clean_api_secret
+            cleaned_input[CONF_REGION] = clean_region
+            cleaned_input[CONF_DEVICE_ID] = clean_device_id
+
             try:
                 devices = await async_fetch_cloud_devices(
                     self.hass,
-                    user_input[CONF_API_KEY],
-                    user_input[CONF_API_SECRET],
-                    user_input.get(CONF_REGION, DEFAULT_REGION),
-                    user_input.get(CONF_DEVICE_ID, ""),
+                    clean_api_key,
+                    clean_api_secret,
+                    clean_region,
+                    clean_device_id,
                 )
                 self._cloud_devices = [d for d in devices if d.get(CONF_LOCAL_KEY)]
                 if not devices:
-                    # La llamada retornó vacío: error de autenticación o red
+                    _LOGGER.warning(
+                        "Tuya Cloud retornó 0 dispositivos (region=%s, device_id=%s)",
+                        clean_region, clean_device_id
+                    )
                     errors["base"] = "cloud_error"
                 elif not self._cloud_devices:
-                    # Autenticación exitosa pero ningún dispositivo tiene local_key
+                    _LOGGER.warning(
+                        "Tuya Cloud devolvió %d dispositivos pero ninguno tiene local_key", len(devices)
+                    )
                     errors["base"] = "no_devices"
                 else:
-                    self._device_data = user_input
+                    self._device_data = cleaned_input
                     return await self.async_step_choose_cloud_device()
             except Exception as err:
-                import logging
-                logging.getLogger(__name__).error(
-                    "Tuya Cloud credentials error: %s", err
-                )
+                _LOGGER.error("Tuya Cloud credentials error: %s", err)
                 _notify_cloud_failure(self.hass, err)
                 errors["base"] = "cloud_error"
 
-        current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
-        current_api_key = store.cloud_config.get(CONF_API_KEY, "")
-        current_api_secret = store.cloud_config.get(CONF_API_SECRET, "")
-        current_device_id = store.cloud_config.get(CONF_DEVICE_ID, "")
+        current_region = (user_input or {}).get(CONF_REGION) or store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
+        current_api_key = (user_input or {}).get(CONF_API_KEY) or store.cloud_config.get(CONF_API_KEY, "")
+        current_api_secret = (user_input or {}).get(CONF_API_SECRET) or store.cloud_config.get(CONF_API_SECRET, "")
+        current_device_id = (user_input or {}).get(CONF_DEVICE_ID) or store.cloud_config.get(CONF_DEVICE_ID, "")
 
         schema = vol.Schema(
             {
@@ -712,24 +725,28 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
         errors = {}
 
         if user_input is not None:
+            clean_api_key = str(user_input.get(CONF_API_KEY, "")).strip()
+            clean_api_secret = str(user_input.get(CONF_API_SECRET, "")).strip()
+            clean_region = str(user_input.get(CONF_REGION, DEFAULT_REGION)).strip().lower()
+            clean_device_id = str(user_input.get(CONF_DEVICE_ID, "")).strip()
+
             store.cloud_config.update({
-                CONF_REGION: user_input[CONF_REGION],
-                CONF_API_KEY: user_input[CONF_API_KEY],
-                CONF_API_SECRET: user_input[CONF_API_SECRET],
+                CONF_REGION: clean_region,
+                CONF_API_KEY: clean_api_key,
+                CONF_API_SECRET: clean_api_secret,
+                CONF_DEVICE_ID: clean_device_id,
             })
-            if user_input.get(CONF_DEVICE_ID):
-                store.cloud_config[CONF_DEVICE_ID] = user_input[CONF_DEVICE_ID]
             await store.async_save()
-            # Opcional: lanzar una sincronización aquí mismo
+            # Lanzar una sincronización inmediata
             self.hass.async_create_task(
                 self.hass.services.async_call(DOMAIN, "sync_cloud", {})
             )
             return self.async_create_entry(title="", data={})
 
-        current_region = store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
-        current_api_key = store.cloud_config.get(CONF_API_KEY, "")
-        current_api_secret = store.cloud_config.get(CONF_API_SECRET, "")
-        current_device_id = store.cloud_config.get(CONF_DEVICE_ID, "")
+        current_region = (user_input or {}).get(CONF_REGION) or store.cloud_config.get(CONF_REGION, DEFAULT_REGION)
+        current_api_key = (user_input or {}).get(CONF_API_KEY) or store.cloud_config.get(CONF_API_KEY, "")
+        current_api_secret = (user_input or {}).get(CONF_API_SECRET) or store.cloud_config.get(CONF_API_SECRET, "")
+        current_device_id = (user_input or {}).get(CONF_DEVICE_ID) or store.cloud_config.get(CONF_DEVICE_ID, "")
 
         schema = vol.Schema(
             {
