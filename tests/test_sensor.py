@@ -128,6 +128,8 @@ class TestSensor(unittest.TestCase):
         self.assertEqual(attrs.get("voltage"), 0.0)
         self.assertEqual(attrs.get("current_a"), 0.0)
     def test_vacuum_battery_and_attributes(self):
+        from homeassistant.components.sensor import SensorDeviceClass
+        from homeassistant.components.vacuum import VacuumEntityFeature
         from custom_components.omni_tuya_local.vacuum import OmniTuyaVacuum
 
         config = {
@@ -138,12 +140,23 @@ class TestSensor(unittest.TestCase):
         }
         vac = OmniTuyaVacuum(self.coordinator, config)
 
+        # Verificar que el feature deprecado BATTERY no esté en _attr_supported_features
+        self.assertNotIn(VacuumEntityFeature.BATTERY, vac._attr_supported_features)
+
         self.coordinator.dps_value.side_effect = lambda dev_id, dps_id: 85 if str(dps_id) == "6" else (250 if str(dps_id) == "19" else None)
-        self.assertEqual(vac.battery_level, 85)
         self.assertEqual(vac.current_power_w, 25.0)
         attrs = vac.extra_state_attributes
-        self.assertEqual(attrs.get("battery_level"), 85)
         self.assertEqual(attrs.get("current_power_w"), 25.0)
+
+        # Sensor de batería dedicado para aspiradora
+        battery_sensor = OmniTuyaSensor(self.coordinator, config, "6", {"name": "Batería"})
+        self.assertEqual(battery_sensor._attr_device_class, SensorDeviceClass.BATTERY)
+        self.assertEqual(battery_sensor._attr_native_unit_of_measurement, "%")
+        self.assertEqual(battery_sensor.native_value, 85)
+
+        # Fallback a nombre de DP como electricity_left
+        self.coordinator.dps_value.side_effect = lambda dev_id, dps_id: 92 if str(dps_id) == "electricity_left" else None
+        self.assertEqual(battery_sensor.native_value, 92)
 
 
 if __name__ == "__main__":

@@ -233,7 +233,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                 )
                             )
 
-            # 4. Todos los valores numéricos/texto observados en LAN (discovered_dps)
+            # 4. Sensores estándar para robot aspirador (Batería DP 6, Tiempo de limpieza DP 17, etc.)
+            dev_type = str(config.get("device_type") or "").lower()
+            cat = str(config.get("category") or "").lower()
+            domain = str(config.get("domain") or "").lower()
+            if dev_type == "robot_vacuum" or cat == "sd" or domain == "vacuum":
+                for vac_dp, default_name in (
+                    ("6", "Batería"),
+                    ("17", "Tiempo de limpieza"),
+                    ("7", "Vida del cepillo lateral"),
+                    ("8", "Vida del cepillo principal"),
+                    ("9", "Vida del filtro"),
+                ):
+                    if vac_dp not in configured_dps and (
+                        vac_dp in raw_dps
+                        or str(vac_dp) in config.get("discovered_dps", {})
+                        or vac_dp == "6"
+                    ):
+                        configured_dps.add(vac_dp)
+                        uid = f"{DOMAIN}_{config['device_id']}_{vac_dp}"
+                        if uid not in _known_unique_ids:
+                            _known_unique_ids.add(uid)
+                            entities.append(
+                                OmniTuyaSensor(
+                                    coordinator, config, vac_dp, {"name": default_name}
+                                )
+                            )
+
+            # 5. Todos los valores numéricos/texto observados en LAN (discovered_dps)
             for dps_id, info in discovered_dps(config).items():
                 if info["kind"] not in {"number", "text"} or dps_id in configured_dps:
                     continue
@@ -345,6 +372,8 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
         label = dps_label(self.config, self.dps_id)
         if label and label != f"DPS {self.dps_id}":
             return label
+        if str(self.dps_id) == "6":
+            return "Batería"
         if str(self.dps_id) == "19":
             return "Potencia"
         if str(self.dps_id) == "20":
@@ -362,6 +391,11 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
         value = self.dps(self.dps_id)
         if value is None and self._desc.get("code"):
             value = self.dps(self._desc["code"])
+        if value is None and str(self.dps_id) == "6":
+            for fallback_key in ("electricity_left", "battery_percentage", "battery"):
+                value = self.dps(fallback_key)
+                if value is not None:
+                    break
         if value is None:
             for func in self.config.get("tuya_functions") or []:
                 if isinstance(func, dict) and str(function_id(func)) == str(self.dps_id):
@@ -378,6 +412,16 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             val_clean = value.strip()
             if not val_clean or val_clean.lower() in ("none", "null", "unknown", "unavailable"):
                 return None
+
+        # Si el device_class es batería
+        if self._attr_device_class == SensorDeviceClass.BATTERY:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                try:
+                    return round(float(value), 1)
+                except (TypeError, ValueError):
+                    return value
 
         # Si el device_class es temperatura y el valor viene en décimas, convertir
         if self._attr_device_class == SensorDeviceClass.TEMPERATURE:

@@ -57,12 +57,28 @@ async def async_fetch_cloud_devices(
         )
 
         def _error_detail(payload: Any) -> str:
-            """Normalize TinyTuya's two error response formats."""
+            """Normalize TinyTuya's error response formats and provide actionable guidance."""
             if not isinstance(payload, dict):
                 return type(payload).__name__
-            if "Payload" in payload:
-                return str(payload["Payload"])
-            return f"{payload.get('code', '?')}: {payload.get('msg', 'unknown')}"
+            err_msg = ""
+            if "Error" in payload:
+                err_msg = str(payload["Error"])
+            elif "Err" in payload:
+                err_msg = str(payload["Err"])
+            elif "Payload" in payload:
+                err_msg = str(payload["Payload"])
+            else:
+                code = payload.get("code", "?")
+                msg = payload.get("msg", "unknown")
+                err_msg = f"{code}: {msg}"
+
+            if "28841107" in err_msg or "data center is suspended" in err_msg.lower():
+                return (
+                    f"{err_msg} -> [Causa: El Data Center del proyecto en Tuya IoT Platform está suspendido "
+                    "o el periodo de prueba de la API IoT Core expiró. Ve a iot.tuya.com -> Cloud -> Development "
+                    "-> Project -> Data Center / Cloud Services para reactivarlo o renovar la prueba gratuita]"
+                )
+            return err_msg
 
         def _is_error(payload: Any) -> bool:
             return isinstance(payload, dict) and (

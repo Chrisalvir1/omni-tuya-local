@@ -43,19 +43,7 @@ class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
         | VacuumEntityFeature.STOP
         | VacuumEntityFeature.RETURN_HOME
         | VacuumEntityFeature.PAUSE
-        | VacuumEntityFeature.BATTERY
     )
-
-    @property
-    def battery_level(self) -> int | None:
-        """Nivel de batería del robot aspirador (0-100%)."""
-        val = _first_valid_dps(self, "6", "electricity_left", "battery_percentage", "battery")
-        if val is not None:
-            try:
-                return int(val)
-            except (TypeError, ValueError):
-                return None
-        return None
 
     @property
     def current_power_w(self) -> float | None:
@@ -71,9 +59,6 @@ class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
     @property
     def extra_state_attributes(self) -> dict:
         attrs = super().extra_state_attributes
-        bat = self.battery_level
-        if bat is not None:
-            attrs["battery_level"] = bat
 
         # Telemetría de energía de estación/base (Eve Energy / Home+)
         power_val = _first_valid_dps(self, "19", "cur_power", "power")
