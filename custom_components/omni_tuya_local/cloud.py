@@ -86,28 +86,58 @@ async def async_fetch_cloud_devices(
             )
 
         def _cloud_with_id(initial_device_id: str | None):
+            valid_dev_id = None
+            if initial_device_id and "," not in initial_device_id:
+                clean_id = initial_device_id.strip()
+                if not any(clean_id.lower().startswith(pfx) for pfx in ("eu", "us", "cn", "in", "az", "ay", "sg", "ue", "we")):
+                    valid_dev_id = clean_id
             return tinytuya.Cloud(
                 apiRegion=api_region,
                 apiKey=api_key,
                 apiSecret=api_secret,
                 # TinyTuya expects apiDeviceID.  Passing the historical
                 # ``devId`` spelling is silently accepted but ignored.
-                apiDeviceID=initial_device_id,
+                apiDeviceID=valid_dev_id,
             )
 
         cloud = _cloud_with_id(device_id or None)
         devices = None
+        all_found_devs: list[dict[str, Any]] = []
+        seen_dev_ids: set[str] = set()
 
-        # Si device_id es un UID de usuario (o varios separados por coma, ej. eu1621898281305Wo1vo)
-        if device_id and any(device_id.startswith(pfx) for pfx in ("eu", "us", "cn", "in", "az", "ay")):
-            uids = [u.strip() for u in device_id.split(",") if u.strip()]
-            all_user_devs = []
-            for uid in uids:
-                req = cloud.cloudrequest(f"/v1.0/users/{uid}/devices")
-                if isinstance(req, dict) and isinstance(req.get("result"), list):
-                    all_user_devs.extend(req["result"])
-            if all_user_devs:
-                devices = all_user_devs
+        def _add_device(d: dict[str, Any]) -> None:
+            did = d.get("id")
+            if did and did not in seen_dev_ids:
+                seen_dev_ids.add(did)
+                all_found_devs.append(d)
+
+        # Si device_id fue ingresado (UIDs de usuario o IDs de dispositivo, posiblemente separados por comas)
+        raw_ids = [u.strip() for u in device_id.split(",") if u.strip()] if device_id else []
+        if raw_ids:
+            for item in raw_ids:
+                # 1. Intentar como UID de usuario (/v1.0/users/{uid}/devices)
+                req = cloud.cloudrequest(f"/v1.0/users/{item}/devices")
+                if isinstance(req, dict) and isinstance(req.get("result"), list) and req["result"]:
+                    for d in req["result"]:
+                        if isinstance(d, dict):
+                            _add_device(d)
+                    continue
+
+                # 2. Si no retornó como UID, intentar como Device ID (/v1.0/devices/{device_id})
+                dev_req = cloud.cloudrequest(f"/v1.0/devices/{item}")
+                if isinstance(dev_req, dict) and isinstance(dev_req.get("result"), dict):
+                    dev_data = dev_req["result"]
+                    _add_device(dev_data)
+                    uid = dev_data.get("uid")
+                    if uid:
+                        u_req = cloud.cloudrequest(f"/v1.0/users/{uid}/devices")
+                        if isinstance(u_req, dict) and isinstance(u_req.get("result"), list):
+                            for d in u_req["result"]:
+                                if isinstance(d, dict):
+                                    _add_device(d)
+
+            if all_found_devs:
+                devices = all_found_devs
 
         if devices is None:
             devices = cloud.getdevices()
@@ -159,6 +189,19 @@ async def async_fetch_cloud_devices(
             dev_id = device.get("id")
             if not dev_id:
                 continue
+
+            # Si local_key falta en el listado, consultar el detalle individual del dispositivo
+            if not (device.get("local_key") or device.get("key") or device.get("localKey") or device.get("localkey")):
+                try:
+                    dev_info = cloud.cloudrequest(f"/v1.0/devices/{dev_id}")
+                    if isinstance(dev_info, dict) and isinstance(dev_info.get("result"), dict):
+                        res = dev_info["result"]
+                        for k in ("local_key", "key", "localKey", "ip", "mac", "uuid"):
+                            if res.get(k) and not device.get(k):
+                                device[k] = res[k]
+                except Exception as err:
+                    _LOGGER.debug("Could not fetch device details for %s: %s", dev_id, err)
+
             try:
                 functions = cloud.getfunctions(dev_id)
                 if isinstance(functions, dict):
@@ -180,12 +223,12 @@ async def async_fetch_cloud_devices(
             "device_id": raw.get("id"),
             "cloud_id": raw.get("id") or "",
             "uuid": raw.get("uuid") or raw.get("local_id") or "",
-            "mac": raw.get("mac") or raw.get("mac_address") or "",
-            "local_key": raw.get("key") or "",
+            "mac": raw.get("mac") or raw.get("mac_address") or raw.get("wifi_mac") or "",
+            "local_key": raw.get("local_key") or raw.get("key") or raw.get("localKey") or raw.get("localkey") or "",
             "host": raw.get("ip") or "",
             "ip": raw.get("ip") or "",
             "name": raw.get("name") or raw.get("id"),
-            "version": str(raw.get("ver") or 3.3),
+            "version": str(raw.get("ver") or raw.get("version") or 3.3),
             "domain": guess_domain(raw),
             "device_type": guess_device_type(raw),
             "product_name": raw.get("product_name") or "",
