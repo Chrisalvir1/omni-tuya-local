@@ -176,8 +176,11 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                 device_id = payload.get("gwId") or payload.get("id")
                 ip = payload.get("ip") or addr[0]
                 version = payload.get("version") or "3.3"
+                dps = payload.get("dps")
+                if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
+                    dps = payload["data"]["dps"]
                 if device_id and ip:
-                    self.callback(device_id, ip, version)
+                    self.callback(device_id, ip, version, dps)
         except Exception as err:
             _LOGGER.debug("Error decoding Tuya UDP broadcast packet: %s", err)
 

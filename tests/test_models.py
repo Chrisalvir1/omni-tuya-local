@@ -75,6 +75,22 @@ class TestModels(unittest.TestCase):
         self.assertEqual(normalized["host"], "192.168.1.10")
         self.assertEqual(normalized["domain"], "light")
 
+    def test_sleep_device_detection(self):
+        from custom_components.omni_tuya_local.device import OmniTuyaDevice
+        from unittest.mock import MagicMock
+        hass = MagicMock()
+        door_cfg = {
+            "device_id": "door_123",
+            "name": "Puerta",
+            "category": "mcs",
+            "device_type": "door_sensor",
+            "host": "192.168.1.50",
+            "local_key": "key123",
+        }
+        dev = OmniTuyaDevice(hass, door_cfg)
+        self.assertTrue(dev.is_sleep_device)
+        self.assertTrue(dev.available)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -40,11 +40,11 @@ class OmniTuyaDevice:
         # rebooted or briefly lost Wi-Fi.
         self._tuya = None
         self._push_tuya = None
-        self._available = False
+        self._available = True if (self.is_sleep_device and self.config.has_host) else False
         self._last_dps: dict[str, Any] = {}
         self._last_status_at: float = 0.0
-        self._lock = asyncio.Lock()
-        self._command_lock = asyncio.Lock()
+        self._lock_obj: asyncio.Lock | None = None
+        self._command_lock_obj: asyncio.Lock | None = None
         self._consecutive_failures: int = 0
         self._last_error_detail: str = ""
         self._runtime_version: str | None = None
@@ -55,6 +55,20 @@ class OmniTuyaDevice:
         self._push_reconnect_requested = threading.Event()
         if self.config.device_type == "alarm_kit":
             self._start_push_listener()
+
+    @property
+    def is_sleep_device(self) -> bool:
+        """Determinar si el dispositivo funciona a batería y entra en modo de reposo profundo."""
+        if self.config.device_type in (
+            "door_sensor", "window_sensor", "motion_sensor", "water_leak_sensor",
+            "smoke_sensor", "gas_sensor", "vibration_sensor", "battery_sensor"
+        ):
+            return True
+        if self.config.category in ("mcs", "cs", "pir", "sjcj", "ywbj", "rqbj", "szj", "sos"):
+            return True
+        if self.config.domain == "binary_sensor" and self.config.device_type != "generic":
+            return True
+        return False
 
     @property
     def available(self) -> bool:
@@ -68,6 +82,18 @@ class OmniTuyaDevice:
     def last_status_at(self) -> float:
         """Monotonic timestamp of the last actual LAN DPS response."""
         return self._last_status_at
+
+    @property
+    def _lock(self) -> asyncio.Lock:
+        if self._lock_obj is None:
+            self._lock_obj = asyncio.Lock()
+        return self._lock_obj
+
+    @property
+    def _command_lock(self) -> asyncio.Lock:
+        if self._command_lock_obj is None:
+            self._command_lock_obj = asyncio.Lock()
+        return self._command_lock_obj
 
     @property
     def consecutive_failures(self) -> int:
@@ -233,6 +259,12 @@ class OmniTuyaDevice:
 
     def _mark_failure(self, reason: Exception | str | None) -> None:
         """Apply availability hysteresis so brief Wi-Fi loss does not flap."""
+        if self.is_sleep_device and self.config.has_host:
+            # Los sensores a batería están en reposo profundo el 99% del tiempo;
+            # un fallo de conexión TCP es el estado normal mientras duermen, no una desconexión.
+            self._available = True
+            return
+
         self._consecutive_failures += 1
         detail = str(reason or self._last_error_detail or "no DPS response")
         self._last_error_detail = detail
@@ -291,6 +323,22 @@ class OmniTuyaDevice:
         async with self._lock:
             if not self.config.has_host:
                 self._available = False
+                return self.dps
+
+            if self.is_sleep_device:
+                # Dispositivo a batería en reposo: realizar sondeo rápido (1s) sin bloquear el hilo
+                try:
+                    dps = await asyncio.wait_for(
+                        self.hass.async_add_executor_job(self._sync_status),
+                        timeout=1.0,
+                    )
+                    if dps is not None:
+                        self._mark_online()
+                        self._last_dps.update(dps)
+                        self._last_status_at = time.monotonic()
+                except Exception:
+                    pass
+                self._available = True
                 return self.dps
 
             last_err: Exception | None = None

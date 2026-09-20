@@ -168,6 +168,14 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         value = self.dps("1")
         if value is None:
+            for alt in ("101", "102", "doorcontact_state"):
+                val = self.dps(alt)
+                if val is not None:
+                    value = val
+                    break
+        if value is None:
+            if getattr(self, "_attr_device_class", None) in (BinarySensorDeviceClass.DOOR, BinarySensorDeviceClass.WINDOW):
+                return False
             return None
         if isinstance(value, bool):
             return value

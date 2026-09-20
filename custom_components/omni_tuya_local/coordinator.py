@@ -320,10 +320,12 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if transports is None:
             from .discovery import async_start_udp_listener
 
-            def _dispatch_discovery(device_id: str, ip: str, version: str) -> None:
+            def _dispatch_discovery(
+                device_id: str, ip: str, version: str, dps: dict[str, Any] | None = None
+            ) -> None:
                 for value in self.hass.data.get(DOMAIN, {}).values():
                     if isinstance(value, OmniTuyaLocalCoordinator):
-                        value._handle_discovered_device(device_id, ip, version)
+                        value._handle_discovered_device(device_id, ip, version, dps)
 
             transports = await async_start_udp_listener(self.hass, _dispatch_discovery)
             domain_data["_lan_udp_transports"] = transports
@@ -340,7 +342,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 timedelta(seconds=DEFAULT_DISCOVERY_INTERVAL),
             )
 
-    def _handle_discovered_device(self, device_id: str, ip: str, version: str) -> None:
+    def _handle_discovered_device(
+        self, device_id: str, ip: str, version: str, dps: dict[str, Any] | None = None
+    ) -> None:
         """Callback para manejar el descubrimiento de un dispositivo."""
         config = self.store.get(device_id)
         if config:
@@ -369,6 +373,13 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 
             if needs_update:
                 self.hass.async_create_task(self._async_update_device(updated))
+
+            device = self.devices.get(device_id)
+            if device:
+                device._mark_online()
+                if dps and isinstance(dps, dict):
+                    device._last_dps.update(dps)
+                    self._handle_push_update(device_id, dps)
 
     async def _async_update_device(self, config: dict[str, Any]) -> None:
         await self.store.add(config)
