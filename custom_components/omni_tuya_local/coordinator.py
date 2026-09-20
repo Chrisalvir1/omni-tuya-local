@@ -401,7 +401,10 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             dps = await asyncio.wait_for(
                 self.hass.async_add_executor_job(device._sync_status),
-                timeout=2.0,
+                # ``_sync_status`` uses TinyTuya's three-second socket timeout
+                # (and can retry once).  A two-second outer timeout cancelled
+                # legitimate replies from a door sensor just after wake-up.
+                timeout=8.0,
             )
             if dps and isinstance(dps, dict):
                 device._mark_online()

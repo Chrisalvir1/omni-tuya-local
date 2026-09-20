@@ -191,7 +191,7 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
                     self._attr_device_class = BinarySensorDeviceClass.GAS
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         value = None
         for alt in ("1", "101", "102", "103", "doorcontact_state", "is_open", "contact", "state"):
             val = self.dps(alt)
@@ -200,9 +200,11 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
                 break
 
         if value is None:
-            # Nunca devolver None: para sensores de puerta/ventana o seguridad
-            # el estado normal en reposo es cerrado / inactivo (False)
-            return False
+            # A sleeping Wi-Fi contact sensor cannot be assumed closed.  Doing
+            # so makes the UI look healthy while hiding a missed LAN event.
+            # Home Assistant renders None as ``unknown`` until a DPS value has
+            # actually been received, which is the only honest state here.
+            return None
 
         if isinstance(value, bool):
             return value
