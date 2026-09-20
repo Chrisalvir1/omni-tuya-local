@@ -31,6 +31,12 @@ class OmniTuyaDevice:
     ) -> None:
         self.hass = hass
         self.config = TuyaDeviceConfig.from_dict(config)
+        # Cloud status is a fallback only for sleeping battery sensors that
+        # cannot expose their event DPS over the local Tuya protocol.  Never
+        # overwrite a regular LAN device with a delayed cloud value.
+        cloud_dps = config.get("initial_dps")
+        if self.is_sleep_device and isinstance(cloud_dps, dict) and cloud_dps:
+            self._last_dps.update(cloud_dps)
         self.device_id = self.config.device_id
         self._on_push = on_push
         # The regular status polling client must never be shared with the
