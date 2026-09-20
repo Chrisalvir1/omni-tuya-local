@@ -161,9 +161,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             configured_dps: set[str] = set()
             dps_map = config.get("dps_map") or {}
 
+            dev_type = str(config.get("device_type") or "").lower()
+            cat = str(config.get("category") or "").lower()
+            text = f"{config.get('name', '')} {config.get('product_name', '')} {dev_type}".lower()
+            is_door_window_or_binary = (
+                config.get("domain") == "binary_sensor"
+                or dev_type in ("door_sensor", "window_sensor", "motion_sensor", "water_leak_sensor", "smoke_sensor", "gas_sensor")
+                or cat in ("mcs", "cs", "pir", "ywbj", "rqbj", "sjcj")
+                or any(w in text for w in ("puerta", "door", "门磁", "ventana", "window", "apertura", "contact", "contacto", "magnetic"))
+            )
+
             # 1. Procesar sensores definidos en dps_map
-            if config.get("domain") == "sensor" and not dps_map:
+            if config.get("domain") == "sensor" and not dps_map and not is_door_window_or_binary:
                 dps_map = {"1": {"name": config.get("name"), "unit": None}}
+            elif is_door_window_or_binary and dps_map:
+                dps_map = {k: v for k, v in dps_map.items() if str(k) not in ("1", "101", "102")}
 
             for dps_id, desc in dps_map.items():
                 dps_id = str(dps_id)

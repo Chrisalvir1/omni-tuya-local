@@ -41,7 +41,7 @@ class OmniTuyaDevice:
         self._tuya = None
         self._push_tuya = None
         self._available = True if (self.is_sleep_device and self.config.has_host) else False
-        self._last_dps: dict[str, Any] = {}
+        self._last_dps: dict[str, Any] = dict(config.get("initial_dps") or {})
         self._last_status_at: float = 0.0
         self._lock_obj: asyncio.Lock | None = None
         self._command_lock_obj: asyncio.Lock | None = None

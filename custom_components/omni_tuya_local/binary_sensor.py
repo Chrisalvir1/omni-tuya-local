@@ -99,7 +99,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                                 coordinator, config, dps_id, sensor_name, device_class, suffix
                             )
                         )
-            elif device_domain == "binary_sensor":
+            is_door_window_or_binary = (
+                device_domain == "binary_sensor"
+                or device_type in (
+                    "door_sensor", "window_sensor", "motion_sensor",
+                    "water_leak_sensor", "smoke_sensor", "gas_sensor", "vibration_sensor"
+                )
+                or config.get("category") in ("mcs", "cs", "pir", "ywbj", "rqbj", "sjcj")
+                or any(
+                    w in f"{config.get('name', '')} {config.get('product_name', '')}".lower()
+                    for w in ("puerta", "door", "门磁", "ventana", "window", "apertura", "contact", "contacto", "magnetic")
+                )
+            )
+            if is_door_window_or_binary:
                 uid = f"{DOMAIN}_{config['device_id']}"
                 if uid not in _known_unique_ids:
                     _known_unique_ids.add(uid)
@@ -122,7 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             for dps_id, info in discovered_dps(config).items():
                 if info["kind"] != "boolean":
                     continue
-                if device_domain == "binary_sensor" and dps_id == "1":
+                if is_door_window_or_binary and dps_id in ("1", "101", "102"):
                     continue
                 if dps_id in switch_dps_ids or dps_id in light_dps_ids:
                     continue
@@ -152,7 +164,7 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict) -> None:
         super().__init__(coordinator, config, "1")
-        # Determinar device_class: prioridad: config explícita > device_type > categoría
+        # Determinar device_class: prioridad: config explícita > device_type > categoría > heurística por nombre
         explicit = config.get("device_class")
         if explicit and hasattr(BinarySensorDeviceClass, explicit.upper()):
             self._attr_device_class = BinarySensorDeviceClass(explicit.lower())
@@ -163,24 +175,48 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
                 _DEVICE_TYPE_TO_CLASS.get(device_type)
                 or _CATEGORY_TO_CLASS.get(category.lower())
             )
+            if not self._attr_device_class:
+                text = f"{config.get('name', '')} {config.get('product_name', '')}".lower()
+                if any(w in text for w in ("puerta", "door", "门磁", "contact", "contacto", "apertura", "magnetic", "magnético", "magnetico")):
+                    self._attr_device_class = BinarySensorDeviceClass.DOOR
+                elif any(w in text for w in ("ventana", "window", "窗")):
+                    self._attr_device_class = BinarySensorDeviceClass.WINDOW
+                elif any(w in text for w in ("movimiento", "motion", "pir", "presencia", "presence")):
+                    self._attr_device_class = BinarySensorDeviceClass.MOTION
+                elif any(w in text for w in ("fuga", "leak", "inundacion", "inundación")):
+                    self._attr_device_class = BinarySensorDeviceClass.MOISTURE
+                elif any(w in text for w in ("humo", "smoke")):
+                    self._attr_device_class = BinarySensorDeviceClass.SMOKE
+                elif any(w in text for w in ("gas",)):
+                    self._attr_device_class = BinarySensorDeviceClass.GAS
 
     @property
-    def is_on(self) -> bool | None:
-        value = self.dps("1")
+    def is_on(self) -> bool:
+        value = None
+        for alt in ("1", "101", "102", "103", "doorcontact_state", "is_open", "contact", "state"):
+            val = self.dps(alt)
+            if val is not None:
+                value = val
+                break
+
         if value is None:
-            for alt in ("101", "102", "doorcontact_state"):
-                val = self.dps(alt)
-                if val is not None:
-                    value = val
-                    break
-        if value is None:
-            if getattr(self, "_attr_device_class", None) in (BinarySensorDeviceClass.DOOR, BinarySensorDeviceClass.WINDOW):
-                return False
-            return None
+            # Nunca devolver None: para sensores de puerta/ventana o seguridad
+            # el estado normal en reposo es cerrado / inactivo (False)
+            return False
+
         if isinstance(value, bool):
             return value
-        return str(value).lower() in {"1", "true", "on", "open", "motion", "detected",
-                                       "wet", "smoke", "gas", "alarm"}
+
+        val_str = str(value).strip().lower()
+        if val_str in ("open", "opened", "true", "1", "motion", "detected", "wet", "smoke", "gas", "alarm"):
+            return True
+        if val_str in ("close", "closed", "false", "0", "normal", "clear", "dry", "standby"):
+            return False
+
+        try:
+            return bool(int(value))
+        except (ValueError, TypeError):
+            return False
 
 
 class OmniTuyaDiscoveredBinarySensor(OmniTuyaEntity, BinarySensorEntity):

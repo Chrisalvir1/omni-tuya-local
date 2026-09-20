@@ -219,6 +219,13 @@ async def async_fetch_cloud_devices(
             continue
         functions = raw.get("_omni_tuya_functions") or []
         feeder_mapping = _pet_feeder_mapping(functions)
+        initial_dps: dict[str, Any] = {}
+        for st in raw.get("status") or []:
+            if isinstance(st, dict):
+                code = st.get("code")
+                val = st.get("value")
+                if code is not None:
+                    initial_dps[str(code)] = val
         formatted.append({
             "device_id": raw.get("id"),
             "cloud_id": raw.get("id") or "",
@@ -241,6 +248,7 @@ async def async_fetch_cloud_devices(
             "sub": raw.get("sub", False),
             "raw": raw,
             "tuya_functions": functions,
+            "initial_dps": initial_dps,
             **feeder_mapping,
         })
     return formatted

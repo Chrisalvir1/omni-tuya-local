@@ -179,9 +179,20 @@ def guess_domain(data: dict[str, Any]) -> str:
         return "vacuum"
     if any(w in text for w in ("fan", "ventilador", "purifier", "purificador")):
         return "fan"
-    if any(w in text for w in ("motion", "movimiento", "door sensor", "contact", "smoke", "gas", "leak", "flood", "presence")):
+    # Sensores binarios (seguridad, contacto, puertas, ventanas, movimiento, fugas, etc.)
+    if any(w in text for w in (
+        "puerta", "door", "ventana", "window", "porton", "portón",
+        "contact", "contacto", "apertura", "magnetic", "magnético", "magnetico",
+        "门", "门磁", "窗",
+        "motion", "movimiento", "pir", "presence", "presencia", "radar", "mmwave",
+        "smoke", "humo", "gas", "leak", "flood", "fuga", "inundacion", "inundación",
+        "tamper", "sabotaje", "vibration", "vibración", "vibracion"
+    )):
         return "binary_sensor"
-    if any(w in text for w in ("temperature", "humidity", "sensor", "temp", "humedad", "co2", "pm2.5", "illuminance")):
+    if any(w in text for w in (
+        "temperature", "temperatura", "humidity", "humedad", "temp", "hum",
+        "co2", "pm2.5", "illuminance", "lux", "power", "energy", "voltage", "current"
+    )):
         return "sensor"
     if any(w in text for w in ("alarm", "alarma", "security system")):
         return "alarm_control_panel"
@@ -228,6 +239,11 @@ def guess_device_type(data: dict[str, Any]) -> str:
         return category_map[category]
 
     matches: dict[str, tuple[str, ...]] = {
+        "door_sensor": (
+            "puerta", "door", "porton", "portón", "contact", "contacto", "apertura",
+            "magnetic", "magnético", "magnetico", "门", "门磁", "door_sensor", "door sensor"
+        ),
+        "window_sensor": ("ventana", "window", "窗", "window sensor", "window_sensor"),
         "coffee_maker": ("cafetera", "coffee maker", "coffee machine"),
         "rice_cooker": ("arrocera", "rice cooker"),
         "air_fryer": ("freidora", "air fryer"),
@@ -258,12 +274,10 @@ def guess_device_type(data: dict[str, Any]) -> str:
         "power_strip": ("power strip", "regleta"),
         "switch": ("switch", "interruptor", "apagador"),
         "motion_sensor": ("motion", "movimiento", "pir"),
-        "door_sensor": ("door sensor", "contact", "magnetic"),
-        "window_sensor": ("window sensor", "ventana", "window"),
         "smoke_sensor": ("smoke", "humo"),
         "gas_sensor": ("gas", "fuga de gas"),
         "co_sensor": ("co ", "carbon monoxide", "monóxido de carbono"),
-        "water_leak_sensor": ("water leak", "fuga", "flood", "inundacion"),
+        "water_leak_sensor": ("water leak", "fuga", "flood", "inundacion", "inundación"),
         "presence_sensor": ("presence", "presencia", "mmwave", "radar"),
         "vibration_sensor": ("vibration", "vibración", "vibracion"),
         "tamper_sensor": ("tamper", "sabotaje", "antisabotaje"),
@@ -282,6 +296,37 @@ def guess_device_type(data: dict[str, Any]) -> str:
         if any(word in text for word in words):
             return device_type
     return "generic"
+
+
+def sanitize_device_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Auto-corregir clasificaciones de dominio y tipo para dispositivos existentes o importados."""
+    updated = dict(data)
+    changed = False
+
+    name = str(updated.get("name") or "").lower()
+    product = str(updated.get("product_name") or "").lower()
+    category = str(updated.get("category") or "").lower()
+    dev_type = str(updated.get("device_type") or "").lower()
+    domain = str(updated.get("domain") or "").lower()
+    text = f"{name} {product} {dev_type}"
+
+    # Detección de sensor de puerta / ventana / contacto
+    is_door = any(w in text for w in ("puerta", "door", "门磁", "contact", "contacto", "apertura", "magnetic", "magnético", "magnetico")) or category in ("mcs", "cs")
+    is_window = any(w in text for w in ("ventana", "window", "窗"))
+
+    if is_door or is_window:
+        if domain != "binary_sensor":
+            updated["domain"] = "binary_sensor"
+            changed = True
+        target_type = "window_sensor" if is_window else "door_sensor"
+        if dev_type != target_type and dev_type in ("", "generic", "switch", "sensor"):
+            updated["device_type"] = target_type
+            changed = True
+        if not category or category == "generic":
+            updated["category"] = "cs" if is_window else "mcs"
+            changed = True
+
+    return updated, changed
 
 
 def normalize_device(data: dict[str, Any]) -> dict[str, Any]:

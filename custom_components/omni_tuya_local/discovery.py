@@ -170,12 +170,29 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
         import json
         import tinytuya
         try:
-            decrypted = tinytuya.decrypt_udp(data)
-            if decrypted:
-                payload = json.loads(decrypted)
-                device_id = payload.get("gwId") or payload.get("id")
+            payload = None
+            try:
+                decrypted = tinytuya.decrypt_udp(data)
+                if decrypted:
+                    payload = json.loads(decrypted)
+            except Exception:
+                payload = None
+
+            if payload is None:
+                try:
+                    payload = json.loads(data.decode("utf-8", errors="ignore"))
+                except Exception:
+                    payload = None
+
+            if payload and isinstance(payload, dict):
+                device_id = (
+                    payload.get("gwId")
+                    or payload.get("id")
+                    or payload.get("devId")
+                    or payload.get("deviceId")
+                )
                 ip = payload.get("ip") or addr[0]
-                version = payload.get("version") or "3.3"
+                version = payload.get("version") or payload.get("ver") or "3.3"
                 dps = payload.get("dps")
                 if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
                     dps = payload["data"]["dps"]
@@ -186,11 +203,11 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
 
 
 async def async_start_udp_listener(hass: HomeAssistant, callback: Any) -> list[asyncio.BaseTransport]:
-    """Iniciar el listener UDP en los puertos 6666 y 6667 de forma no bloqueante."""
+    """Iniciar el listener UDP en los puertos 6666, 6667 y 7000 de forma no bloqueante."""
     loop = asyncio.get_running_loop()
     transports = []
 
-    for port in (6666, 6667):
+    for port in (6666, 6667, 7000):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

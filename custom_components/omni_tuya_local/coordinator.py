@@ -211,8 +211,16 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _ensure_devices(self) -> None:
         """Sincronizar el dict de devices con la store."""
+        from .models import sanitize_device_config
+
         configured = self.store.all()
-        for device_id, config in configured.items():
+        for device_id, config in list(configured.items()):
+            sanitized, changed = sanitize_device_config(config)
+            if changed:
+                self.hass.async_create_task(self.store.add(sanitized))
+                configured[device_id] = sanitized
+                config = sanitized
+
             if not config.get("enabled", True):
                 self.devices.pop(device_id, None)
                 continue
@@ -380,6 +388,29 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if dps and isinstance(dps, dict):
                     device._last_dps.update(dps)
                     self._handle_push_update(device_id, dps)
+                elif device.is_sleep_device:
+                    # El sensor a batería acaba de despertar y emitió broadcast UDP.
+                    # Sondeamos inmediatamente por TCP mientras está despierto en la red Wi-Fi.
+                    self.hass.async_create_task(self._async_poll_woken_device(device_id))
+
+    async def _async_poll_woken_device(self, device_id: str) -> None:
+        """Sondear inmediatamente un dispositivo a batería tras recibir su broadcast de despertar."""
+        device = self.devices.get(device_id)
+        if not device:
+            return
+        try:
+            dps = await asyncio.wait_for(
+                self.hass.async_add_executor_job(device._sync_status),
+                timeout=2.0,
+            )
+            if dps and isinstance(dps, dict):
+                device._mark_online()
+                device._last_dps.update(dps)
+                device._last_status_at = time.monotonic()
+                self._handle_push_update(device_id, dps)
+                _LOGGER.debug("Immediate poll on wakeup succeeded for %s: %s", device_id, dps)
+        except Exception as err:
+            _LOGGER.debug("Immediate poll on wakeup for %s: %s", device_id, err)
 
     async def _async_update_device(self, config: dict[str, Any]) -> None:
         await self.store.add(config)
