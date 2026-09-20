@@ -117,6 +117,7 @@ class TuyaDeviceStore:
                             "name", "local_key", "version", "product_name", "product_id",
                             "category", "category_name", "tuya_functions",
                             "cloud_id", "uuid", "mac",
+                            "initial_dps",
                             "pet_feeder_feed_dp", "pet_feeder_feed_kind",
                             "pet_feeder_clean_hopper_dp", "pet_feeder_clean_hopper_value",
                         ):

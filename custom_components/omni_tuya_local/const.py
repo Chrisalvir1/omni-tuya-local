@@ -21,9 +21,9 @@ DEFAULT_REGION = "us"
 DEFAULT_VERSION = "3.3"
 DEFAULT_POLL_INTERVAL = 30          # segundos — 15s era muy agresivo
 DEFAULT_DISCOVERY_INTERVAL = 300    # segundos — escaneo periódico LAN
-# Cloud is opt-in/manual. Device control and availability must never depend on
-# a remote API round trip.
-DEFAULT_CLOUD_SYNC_INTERVAL = 0
+# LAN remains the primary transport.  Battery contact/alarm sensors that do
+# not expose a Tuya LAN service need a cloud state fallback.
+DEFAULT_CLOUD_SYNC_INTERVAL = 60
 MAX_POLL_FAILURES = 5               # fallos antes de reducir frecuencia de poll
 BACKOFF_POLL_INTERVAL = 120         # poll cada 2 min cuando el device falla
 
