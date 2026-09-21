@@ -40,7 +40,7 @@ class OmniTuyaDevice:
         # rebooted or briefly lost Wi-Fi.
         self._tuya = None
         self._push_tuya = None
-        self._available = True if (self.is_sleep_device and self.config.has_host) else False
+        self._available = True if self.is_sleep_device else False
         self._last_dps: dict[str, Any] = dict(config.get("initial_dps") or {})
         self._last_status_at: float = 0.0
         self._lock_obj: asyncio.Lock | None = None
@@ -259,20 +259,10 @@ class OmniTuyaDevice:
 
     def _mark_failure(self, reason: Exception | str | None) -> None:
         """Apply availability hysteresis so brief Wi-Fi loss does not flap."""
-        if self.is_sleep_device and self.config.has_host:
+        if self.is_sleep_device:
             # Los sensores a batería están en reposo profundo el 99% del tiempo;
             # un fallo de conexión TCP es el estado normal mientras duermen, no una desconexión.
             self._available = True
-            return
-
-        self._consecutive_failures += 1
-        detail = str(reason or self._last_error_detail or "no DPS response")
-        self._last_error_detail = detail
-
-        # Dispositivos a batería (sensores de puerta/ventana): en reposo profundo
-        # apagan su Wi-Fi para ahorrar energía. Nunca deben marcarse como unavailable
-        # por la ausencia de respuesta al sondeo periódico LAN.
-        if self.is_sleep_device and self.config.has_host:
             return
 
         if self._consecutive_failures >= _UNAVAILABLE_AFTER_FAILURES:

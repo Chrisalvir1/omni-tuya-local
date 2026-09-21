@@ -74,6 +74,8 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(result, Exception):
                 _LOGGER.error("Error inesperado en polling para %s: %s", device_id, result)
                 dps_by_device[device_id] = device.dps
+            elif not result and device.is_sleep_device:
+                dps_by_device[device_id] = device.dps
             else:
                 dps_by_device[device_id] = result
 
@@ -101,7 +103,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     device.update_config(updated)
                     dps_schema_changed = True
 
-            availability[device_id] = device.available
+            availability[device_id] = True if device.is_sleep_device else device.available
             # Backoff: si el device falla muchas veces, ajustar interval dinámicamente
             if device.consecutive_failures >= MAX_POLL_FAILURES:
                 _LOGGER.debug(
@@ -578,7 +580,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def dps_value(self, device_id: str, dps_id: str | int = "1") -> Any:
         dev_dps = (self.data or {}).get("dps", {}).get(device_id)
-        if dev_dps is None and device_id in self.devices:
+        if not dev_dps and device_id in self.devices:
             dev_dps = self.devices[device_id].dps
         if not dev_dps or not isinstance(dev_dps, dict):
             return None
@@ -595,6 +597,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return None
 
     def is_available(self, device_id: str) -> bool:
+        device = self.devices.get(device_id)
+        if device and device.is_sleep_device:
+            return True
         return bool((self.data or {}).get("available", {}).get(device_id))
 
     def _publish_confirmed_state(self, device_id: str, device: OmniTuyaDevice) -> None:
