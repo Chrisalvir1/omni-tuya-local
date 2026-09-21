@@ -179,10 +179,20 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                 payload = None
 
             if payload is None:
-                try:
-                    payload = json.loads(data.decode("utf-8", errors="ignore"))
-                except Exception:
-                    payload = None
+                # Intentar desencriptar con claves locales conocidas
+                for key in ("1.j1H3Xd3Sq{93Y}",):
+                    try:
+                        dec = tinytuya.decrypt(data, key.encode("utf-8"))
+                        if dec:
+                            payload = json.loads(dec.decode("utf-8", errors="ignore"))
+                            break
+                    except Exception:
+                        pass
+
+            sender_ip = addr[0]
+            device_id = None
+            version = "3.3"
+            dps = None
 
             if payload and isinstance(payload, dict):
                 device_id = (
@@ -191,13 +201,18 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                     or payload.get("devId")
                     or payload.get("deviceId")
                 )
-                ip = payload.get("ip") or addr[0]
+                sender_ip = payload.get("ip") or sender_ip
                 version = payload.get("version") or payload.get("ver") or "3.3"
                 dps = payload.get("dps")
                 if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
                     dps = payload["data"]["dps"]
-                if device_id and ip:
-                    self.callback(device_id, ip, version, dps)
+
+            # Si el broadcast proviene de la IP fija del sensor de oficina
+            if sender_ip == "192.168.110.250" and not device_id:
+                device_id = "bf34dcc476d495df94ud9l"
+
+            if device_id and sender_ip:
+                self.callback(device_id, sender_ip, version, dps)
         except Exception as err:
             _LOGGER.debug("Error decoding Tuya UDP broadcast packet: %s", err)
 

@@ -177,7 +177,7 @@ class OmniTuyaDevice:
                 version=float(effective_version),
             )
             device.set_socketPersistent(False)
-            device.set_socketTimeout(3.0)
+            device.set_socketTimeout(1.5 if self.is_sleep_device else 3.0)
             device.set_socketRetryLimit(1)
         return device
 
