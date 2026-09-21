@@ -363,6 +363,10 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "binary_sensor.sensor_puerta_de_oficina_puerta",
                 "sensor.sensor_puerta_oficina_bateria",
                 "sensor.sensor_puerta_de_oficina_bateria",
+                "binary_sensor.sensor_puerta_de_bodega_puerta",
+                "binary_sensor.sensor_puerta_bodega_puerta",
+                "sensor.sensor_puerta_de_bodega_bateria",
+                "sensor.sensor_puerta_bodega_bateria",
             ]
 
             @callback
@@ -372,6 +376,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if not new_state or new_state.state in ("unknown", "unavailable", "None", ""):
                     return
 
+                e_name = entity_id.lower()
                 for dev_id, cfg in self.store.all().items():
                     is_door = (
                         cfg.get("device_type") in ("door_sensor", "window_sensor")
@@ -379,6 +384,12 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         or "puerta" in f"{cfg.get('name', '')} {cfg.get('product_name', '')}".lower()
                     )
                     if not is_door:
+                        continue
+
+                    c_name = f"{cfg.get('name', '')} {dev_id}".lower()
+                    if "bodega" in e_name and "bodega" not in c_name:
+                        continue
+                    if "oficina" in e_name and "oficina" not in c_name:
                         continue
 
                     if entity_id.startswith("binary_sensor."):
@@ -407,6 +418,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for cid in candidates:
                 st = self.hass.states.get(cid)
                 if st and st.state not in ("unknown", "unavailable", "None", ""):
+                    e_name = cid.lower()
                     for dev_id, cfg in self.store.all().items():
                         is_door = (
                             cfg.get("device_type") in ("door_sensor", "window_sensor")
@@ -415,6 +427,13 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                         if not is_door:
                             continue
+
+                        c_name = f"{cfg.get('name', '')} {dev_id}".lower()
+                        if "bodega" in e_name and "bodega" not in c_name:
+                            continue
+                        if "oficina" in e_name and "oficina" not in c_name:
+                            continue
+
                         if cid.startswith("binary_sensor."):
                             is_open = st.state == STATE_ON
                             dps_up = {"1": is_open, "doorcontact_state": is_open}

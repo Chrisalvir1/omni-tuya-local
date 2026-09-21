@@ -186,7 +186,7 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
 
             if payload is None:
                 # Intentar desencriptar con claves locales conocidas
-                for key in ("1.j1H3Xd3Sq{93Y}",):
+                for key in ("1.j1H3Xd3Sq{93Y}", "UW9}sCU(77KO>PI<"):
                     try:
                         dec = tinytuya.decrypt(data, key.encode("utf-8"))
                         if dec:
@@ -213,9 +213,12 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                 if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
                     dps = payload["data"]["dps"]
 
-            # Si el broadcast proviene de la IP fija del sensor de oficina
-            if sender_ip == "192.168.110.250" and not device_id:
-                device_id = "bf34dcc476d495df94ud9l"
+            # Si el broadcast proviene de la IP fija del sensor de oficina o bodega
+            if not device_id:
+                if sender_ip == "192.168.110.250":
+                    device_id = "bf34dcc476d495df94ud9l"
+                elif sender_ip == "192.168.110.251":
+                    device_id = "bfbda98cc2e9d3ad13n21x"
 
             if device_id and sender_ip:
                 self.callback(device_id, sender_ip, version, dps)
