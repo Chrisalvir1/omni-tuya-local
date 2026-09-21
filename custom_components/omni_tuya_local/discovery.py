@@ -172,11 +172,17 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
         try:
             payload = None
             try:
-                decrypted = tinytuya.decrypt_udp(data)
-                if decrypted:
-                    payload = json.loads(decrypted)
+                payload = json.loads(data.decode("utf-8", errors="ignore"))
             except Exception:
                 payload = None
+
+            if payload is None:
+                try:
+                    decrypted = tinytuya.decrypt_udp(data)
+                    if decrypted:
+                        payload = json.loads(decrypted)
+                except Exception:
+                    payload = None
 
             if payload is None:
                 # Intentar desencriptar con claves locales conocidas
