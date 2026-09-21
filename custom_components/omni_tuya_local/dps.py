@@ -70,6 +70,14 @@ _LIGHT_DPS_LABELS = {
     "6": "Luz 6",
 }
 
+_DOOR_SENSOR_DPS_LABELS = {
+    "1": "Puerta",
+    "2": "Batería",
+    "3": "Estado de batería",
+    "4": "Antisabotaje",
+}
+
+
 
 def dps_kind(value: Any) -> str | None:
     """Return the Home Assistant-safe kind for an observed DPS value."""
@@ -126,6 +134,17 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
 
     if dev_type == "switch" or cat in ("kg", "tgkg", "tgq", "dlq", "tdq") or domain == "switch":
         standard_label = _SWITCH_DPS_LABELS.get(dps_id)
+        if standard_label:
+            return standard_label
+
+    if (
+        dev_type in ("door_sensor", "window_sensor")
+        or cat in ("mcs", "cs")
+        or any(w in product for w in ("puerta", "door", "门磁", "contact", "contacto", "apertura", "magnetic", "ventana", "window", "窗"))
+    ):
+        if dps_id == "1" and (dev_type == "window_sensor" or cat == "cs" or any(w in product for w in ("ventana", "window", "窗"))):
+            return "Ventana"
+        standard_label = _DOOR_SENSOR_DPS_LABELS.get(dps_id)
         if standard_label:
             return standard_label
 

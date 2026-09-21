@@ -226,6 +226,13 @@ async def async_fetch_cloud_devices(
                 val = st.get("value")
                 if code is not None:
                     initial_dps[str(code)] = val
+                    if code == "doorcontact_state":
+                        initial_dps["1"] = val
+                    elif code in ("battery_percentage", "electricity_left", "battery"):
+                        initial_dps["2"] = val
+                    elif code in ("temper_alarm", "tamper"):
+                        initial_dps["4"] = val
+
         formatted.append({
             "device_id": raw.get("id"),
             "cloud_id": raw.get("id") or "",

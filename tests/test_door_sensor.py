@@ -75,6 +75,43 @@ class TestDoorSensor(unittest.TestCase):
             coordinator.dps_value.return_value = val
             self.assertFalse(entity.is_on)
 
+    def test_door_battery_and_tamper(self):
+        from custom_components.omni_tuya_local.sensor import OmniTuyaSensor
+        from custom_components.omni_tuya_local.binary_sensor import OmniTuyaDiscoveredBinarySensor
+        from homeassistant.components.sensor import SensorDeviceClass
+        from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+
+        coordinator = MagicMock()
+        coordinator.is_available.return_value = True
+
+        cfg = {
+            "device_id": "bf3f78b02e35c47c84ozjm",
+            "name": "SENSOR PUERTA DE OFICINA",
+            "product_name": "WiFi门磁",
+            "domain": "binary_sensor",
+            "device_type": "door_sensor",
+            "category": "mcs",
+            "initial_dps": {"1": False, "2": 18, "4": False, "battery_percentage": 18},
+        }
+
+        # 1. Batería (DP 2)
+        coordinator.dps_value.return_value = None  # Sensor asleep, test fallback to initial_dps
+        bat_sensor = OmniTuyaSensor(coordinator, cfg, "2", {"code": "battery_percentage"})
+        self.assertEqual(bat_sensor.name, "Batería")
+        self.assertEqual(bat_sensor.device_class, SensorDeviceClass.BATTERY)
+        self.assertEqual(bat_sensor.native_value, 18)
+
+        # Coordinator receives live push update
+        coordinator.dps_value.side_effect = lambda dev_id, dps: 85 if dps == "2" else None
+        self.assertEqual(bat_sensor.native_value, 85)
+
+        # 2. Tamper (DP 4)
+        coordinator.dps_value.side_effect = None
+        coordinator.dps_value.return_value = None
+        tamper_sensor = OmniTuyaDiscoveredBinarySensor(coordinator, cfg, "4", "Antisabotaje")
+        self.assertEqual(tamper_sensor.device_class, BinarySensorDeviceClass.TAMPER)
+        self.assertFalse(tamper_sensor.is_on)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,10 @@ class DummyEntity:
     _attr_state_class = None
     _attr_entity_category = None
 
+    @property
+    def device_class(self):
+        return self._attr_device_class
+
     def __class_getitem__(cls, item):
         return cls
     

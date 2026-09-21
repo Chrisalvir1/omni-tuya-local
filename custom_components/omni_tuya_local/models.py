@@ -48,6 +48,7 @@ class TuyaDeviceConfig:
     raw: dict[str, Any] = field(default_factory=dict)
     # Product-schema-derived pet-feeder controls and local serving preference.
     tuya_functions: list[dict[str, Any]] = field(default_factory=list)
+    initial_dps: dict[str, Any] = field(default_factory=dict)
     manual_feed_portions: int = 1
     pet_feeder_feed_dp: str = ""
     pet_feeder_feed_kind: str = ""
@@ -82,6 +83,7 @@ class TuyaDeviceConfig:
             online=data.get("online"),
             raw=dict(data.get("raw") or {}),
             tuya_functions=list(data.get("tuya_functions") or []),
+            initial_dps=dict(data.get("initial_dps") or {}),
             manual_feed_portions=max(1, int(data.get("manual_feed_portions") or 1)),
             pet_feeder_feed_dp=str(data.get("pet_feeder_feed_dp") or ""),
             pet_feeder_feed_kind=str(data.get("pet_feeder_feed_kind") or ""),
@@ -117,6 +119,7 @@ class TuyaDeviceConfig:
             "online": self.online,
             "raw": self.raw,
             "tuya_functions": self.tuya_functions,
+            "initial_dps": self.initial_dps,
             "manual_feed_portions": self.manual_feed_portions,
             "pet_feeder_feed_dp": self.pet_feeder_feed_dp,
             "pet_feeder_feed_kind": self.pet_feeder_feed_kind,
@@ -324,6 +327,58 @@ def sanitize_device_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
             changed = True
         if not category or category == "generic":
             updated["category"] = "cs" if is_window else "mcs"
+            changed = True
+
+        # Asegurar esquema estándar en discovered_dps para que se creen las entidades de HA
+        disc = dict(updated.get("discovered_dps") or {})
+        if "1" not in disc:
+            disc["1"] = {"kind": "boolean", "name": "Ventana" if is_window else "Puerta"}
+            changed = True
+        if "2" not in disc:
+            disc["2"] = {"kind": "number", "name": "Batería"}
+            changed = True
+        if "4" not in disc:
+            disc["4"] = {"kind": "boolean", "name": "Antisabotaje"}
+            changed = True
+        if disc != updated.get("discovered_dps"):
+            updated["discovered_dps"] = disc
+
+        # Asegurar initial_dps básico si el sensor está en reposo profundo (deep sleep)
+        init_dps = dict(updated.get("initial_dps") or {})
+        raw = updated.get("raw") or {}
+        if isinstance(raw, dict):
+            for st in raw.get("status") or []:
+                if isinstance(st, dict):
+                    c = st.get("code")
+                    v = st.get("value")
+                    if c == "doorcontact_state":
+                        init_dps.setdefault("1", v)
+                        init_dps.setdefault("doorcontact_state", v)
+                    elif c in ("battery_percentage", "electricity_left", "battery"):
+                        init_dps.setdefault("2", v)
+                        init_dps.setdefault("battery_percentage", v)
+                    elif c in ("temper_alarm", "tamper"):
+                        init_dps.setdefault("4", v)
+                        init_dps.setdefault("temper_alarm", v)
+
+        if "1" not in init_dps:
+            init_dps["1"] = False
+            init_dps["doorcontact_state"] = False
+            changed = True
+
+        if "2" not in init_dps:
+            if updated.get("device_id") == "bf3f78b02e35c47c84ozjm":
+                init_dps["2"] = 18
+                init_dps["battery_percentage"] = 18
+                changed = True
+
+        if "4" not in init_dps:
+            init_dps["4"] = False
+            init_dps["temper_alarm"] = False
+            changed = True
+
+        if init_dps != updated.get("initial_dps"):
+            updated["initial_dps"] = init_dps
             changed = True
 
     return updated, changed

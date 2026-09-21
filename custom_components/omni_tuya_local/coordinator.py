@@ -401,7 +401,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             dps = await asyncio.wait_for(
                 self.hass.async_add_executor_job(device._sync_status),
-                timeout=2.0,
+                timeout=8.0,
             )
             if dps and isinstance(dps, dict):
                 device._mark_online()
