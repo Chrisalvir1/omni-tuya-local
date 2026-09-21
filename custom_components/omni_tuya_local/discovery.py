@@ -217,7 +217,7 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
             if not device_id:
                 if sender_ip == "192.168.110.250":
                     device_id = "bf34dcc476d495df94ud9l"
-                elif sender_ip == "192.168.110.251":
+                elif sender_ip in ("192.168.110.36", "192.168.110.251"):
                     device_id = "bfbda98cc2e9d3ad13n21x"
 
             if device_id and sender_ip:

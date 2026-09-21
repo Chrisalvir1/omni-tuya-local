@@ -402,11 +402,12 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     elif entity_id.startswith("sensor.") and "bateria" in entity_id:
                         try:
                             bat_val = float(new_state.state)
-                            dps_update = {"2": int(bat_val), "battery_percentage": int(bat_val)}
-                            dev = self.devices.get(dev_id)
-                            if dev:
-                                dev._last_dps.update(dps_update)
-                            self._handle_push_update(dev_id, dps_update)
+                            if bat_val > 0:
+                                dps_update = {"2": int(bat_val), "battery_percentage": int(bat_val)}
+                                dev = self.devices.get(dev_id)
+                                if dev:
+                                    dev._last_dps.update(dps_update)
+                                self._handle_push_update(dev_id, dps_update)
                         except (ValueError, TypeError):
                             pass
 
@@ -444,11 +445,12 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         elif cid.startswith("sensor.") and "bateria" in cid:
                             try:
                                 bat_val = float(st.state)
-                                dps_up = {"2": int(bat_val), "battery_percentage": int(bat_val)}
-                                dev = self.devices.get(dev_id)
-                                if dev:
-                                    dev._last_dps.update(dps_up)
-                                self._handle_push_update(dev_id, dps_up)
+                                if bat_val > 0:
+                                    dps_up = {"2": int(bat_val), "battery_percentage": int(bat_val)}
+                                    dev = self.devices.get(dev_id)
+                                    if dev:
+                                        dev._last_dps.update(dps_up)
+                                    self._handle_push_update(dev_id, dps_up)
                             except (ValueError, TypeError):
                                 pass
 
@@ -493,17 +495,22 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 updated["version"] = str(version)
                 needs_update = True
 
-            if needs_update:
-                self.hass.async_create_task(self._async_update_device(updated))
-
             device = self.devices.get(tid)
             if device:
+                # Actualizar inmediatamente la configuración en memoria y resetear cliente
+                if ip and device.config.host != ip:
+                    device.update_config(updated)
+                    device._invalidate_client()
+
                 device._mark_online()
                 if dps and isinstance(dps, dict):
                     device._last_dps.update(dps)
                     self._handle_push_update(tid, dps)
                 elif device.is_sleep_device:
                     self.hass.async_create_task(self._async_poll_woken_device(tid))
+
+            if needs_update:
+                self.hass.async_create_task(self._async_update_device(updated))
 
     async def _async_poll_woken_device(self, device_id: str) -> None:
         """Sondear inmediatamente un dispositivo a batería tras recibir su broadcast de despertar."""
