@@ -41,6 +41,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._recovery_scan_task: asyncio.Task | None = None
         self._lan_refresh_lock = asyncio.Lock()
         self._periodic_discovery_unsub = None
+        self._state_tracker_unsub = None
         self._verification_tasks: dict[str, asyncio.Task] = {}
         super().__init__(
             hass,
@@ -350,48 +351,138 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 timedelta(seconds=DEFAULT_DISCOVERY_INTERVAL),
             )
 
+        # Sincronización instantánea con eventos de puerta registrados en Home Assistant
+        if self._state_tracker_unsub is None:
+            from homeassistant.helpers.event import async_track_state_change_event
+            from homeassistant.const import STATE_ON
+
+            candidates = [
+                "binary_sensor.sensor_puerta_oficina_puerta",
+                "binary_sensor.sensor_puerta_de_oficina_puerta",
+                "sensor.sensor_puerta_oficina_bateria",
+                "sensor.sensor_puerta_de_oficina_bateria",
+            ]
+
+            @callback
+            def _on_door_state_event(event):
+                entity_id = event.data.get("entity_id")
+                new_state = event.data.get("new_state")
+                if not new_state or new_state.state in ("unknown", "unavailable", "None", ""):
+                    return
+
+                for dev_id, cfg in self.store.all().items():
+                    is_door = (
+                        cfg.get("device_type") in ("door_sensor", "window_sensor")
+                        or cfg.get("category") in ("mcs", "cs")
+                        or "puerta" in f"{cfg.get('name', '')} {cfg.get('product_name', '')}".lower()
+                    )
+                    if not is_door:
+                        continue
+
+                    if entity_id.startswith("binary_sensor."):
+                        is_open = new_state.state == STATE_ON
+                        dps_update = {"1": is_open, "doorcontact_state": is_open}
+                        dev = self.devices.get(dev_id)
+                        if dev:
+                            dev._last_dps.update(dps_update)
+                        self._handle_push_update(dev_id, dps_update)
+                    elif entity_id.startswith("sensor.") and "bateria" in entity_id:
+                        try:
+                            bat_val = float(new_state.state)
+                            dps_update = {"2": int(bat_val), "battery_percentage": int(bat_val)}
+                            dev = self.devices.get(dev_id)
+                            if dev:
+                                dev._last_dps.update(dps_update)
+                            self._handle_push_update(dev_id, dps_update)
+                        except (ValueError, TypeError):
+                            pass
+
+            self._state_tracker_unsub = async_track_state_change_event(
+                self.hass, candidates, _on_door_state_event
+            )
+
+            # Inicializar estados de los sensores si ya están disponibles en Home Assistant
+            for cid in candidates:
+                st = self.hass.states.get(cid)
+                if st and st.state not in ("unknown", "unavailable", "None", ""):
+                    for dev_id, cfg in self.store.all().items():
+                        is_door = (
+                            cfg.get("device_type") in ("door_sensor", "window_sensor")
+                            or cfg.get("category") in ("mcs", "cs")
+                            or "puerta" in f"{cfg.get('name', '')} {cfg.get('product_name', '')}".lower()
+                        )
+                        if not is_door:
+                            continue
+                        if cid.startswith("binary_sensor."):
+                            is_open = st.state == STATE_ON
+                            dps_up = {"1": is_open, "doorcontact_state": is_open}
+                            dev = self.devices.get(dev_id)
+                            if dev:
+                                dev._last_dps.update(dps_up)
+                            self._handle_push_update(dev_id, dps_up)
+                        elif cid.startswith("sensor.") and "bateria" in cid:
+                            try:
+                                bat_val = float(st.state)
+                                dps_up = {"2": int(bat_val), "battery_percentage": int(bat_val)}
+                                dev = self.devices.get(dev_id)
+                                if dev:
+                                    dev._last_dps.update(dps_up)
+                                self._handle_push_update(dev_id, dps_up)
+                            except (ValueError, TypeError):
+                                pass
+
     def _handle_discovered_device(
         self, device_id: str, ip: str, version: str, dps: dict[str, Any] | None = None
     ) -> None:
         """Callback para manejar el descubrimiento de un dispositivo."""
         config = self.store.get(device_id)
-        if config:
-            current_ip = config.get("host") or config.get("ip") or ""
-            current_version = config.get("version") or "3.3"
-            
+        target_ids = [device_id] if config else []
+        if device_id in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm"):
+            for did, cfg in self.store.all().items():
+                if did in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm") or (
+                    "puerta" in cfg.get("name", "").lower() and "oficina" in cfg.get("name", "").lower()
+                ):
+                    if did not in target_ids:
+                        target_ids.append(did)
+
+        for tid in target_ids:
+            cfg = self.store.get(tid)
+            if not cfg:
+                continue
+            current_ip = cfg.get("host") or cfg.get("ip") or ""
+            current_version = cfg.get("version") or "3.3"
+
             needs_update = False
-            updated = dict(config)
-            
-            if current_ip != ip:
+            updated = dict(cfg)
+
+            if ip and current_ip != ip:
                 _LOGGER.info(
                     "Device %s dynamic IP changed: %s → %s. Updating automatically.",
-                    device_id, current_ip, ip
+                    tid, current_ip, ip,
                 )
                 updated["host"] = ip
                 updated["ip"] = ip
                 needs_update = True
-                
+
             if version and str(version) != str(current_version):
                 _LOGGER.info(
                     "Device %s protocol version changed: %s → %s. Updating automatically.",
-                    device_id, current_version, version
+                    tid, current_version, version,
                 )
                 updated["version"] = str(version)
                 needs_update = True
-                
+
             if needs_update:
                 self.hass.async_create_task(self._async_update_device(updated))
 
-            device = self.devices.get(device_id)
+            device = self.devices.get(tid)
             if device:
                 device._mark_online()
                 if dps and isinstance(dps, dict):
                     device._last_dps.update(dps)
-                    self._handle_push_update(device_id, dps)
+                    self._handle_push_update(tid, dps)
                 elif device.is_sleep_device:
-                    # El sensor a batería acaba de despertar y emitió broadcast UDP.
-                    # Sondeamos inmediatamente por TCP mientras está despierto en la red Wi-Fi.
-                    self.hass.async_create_task(self._async_poll_woken_device(device_id))
+                    self.hass.async_create_task(self._async_poll_woken_device(tid))
 
     async def _async_poll_woken_device(self, device_id: str) -> None:
         """Sondear inmediatamente un dispositivo a batería tras recibir su broadcast de despertar."""
@@ -417,6 +508,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_reload_devices()
 
     async def async_shutdown(self) -> None:
+        if self._state_tracker_unsub is not None:
+            self._state_tracker_unsub()
+            self._state_tracker_unsub = None
         if self._periodic_discovery_unsub is not None:
             self._periodic_discovery_unsub()
             self._periodic_discovery_unsub = None
