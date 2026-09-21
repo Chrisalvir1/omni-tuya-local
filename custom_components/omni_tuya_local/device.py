@@ -268,6 +268,13 @@ class OmniTuyaDevice:
         self._consecutive_failures += 1
         detail = str(reason or self._last_error_detail or "no DPS response")
         self._last_error_detail = detail
+
+        # Dispositivos a batería (sensores de puerta/ventana): en reposo profundo
+        # apagan su Wi-Fi para ahorrar energía. Nunca deben marcarse como unavailable
+        # por la ausencia de respuesta al sondeo periódico LAN.
+        if self.is_sleep_device and self.config.has_host:
+            return
+
         if self._consecutive_failures >= _UNAVAILABLE_AFTER_FAILURES:
             if self._available and self._consecutive_failures == _UNAVAILABLE_AFTER_FAILURES:
                 _LOGGER.warning(
