@@ -169,7 +169,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if old_entity_id:
         entity_registry.async_remove(old_entity_id)
 
-    hub_device = device_registry.async_get_device_by_identifier((DOMAIN, "hub"))
+    hub_device = device_registry.async_get_device_by_identifier((DOMAIN, "hub"), entry.entry_id)
     if hub_device:
         device_registry.async_remove_device(hub_device.id)
 
