@@ -400,11 +400,31 @@ async def async_cleanup_device_entities(
                     stale_entities.add(ent.entity_id)
                     continue
 
-                # D. En switches: sólo permitir los canales físicos 1..max_gangs
+                # D. En switches: sólo permitir los canales físicos 1..max_gangs y desocultarlos si estaban ocultos
                 if ent.domain == "switch":
                     if uid not in valid_switch_uids:
                         stale_entities.add(ent.entity_id)
                         continue
+                    # Asegurar que el switch físico NO esté oculto
+                    if getattr(ent, "hidden_by", None) is not None:
+                        _LOGGER.info("Unhiding wall switch entity %s", ent.entity_id)
+                        try:
+                            entity_registry.async_update_entity(ent.entity_id, hidden_by=None)
+                        except Exception as err:
+                            _LOGGER.debug("Could not unhide entity %s: %s", ent.entity_id, err)
+
+                # E. Eliminar entidades envoltorias creadas por helpers (switch_as_x, etc.) en este dispositivo
+                platform = getattr(ent, "platform", None)
+                if platform == "switch_as_x" or (ent.domain in ("fan", "light") and platform != DOMAIN):
+                    stale_entities.add(ent.entity_id)
+                    # También remover el config_entry de switch_as_x asociado si existe
+                    centry_id = getattr(ent, "config_entry_id", None)
+                    if centry_id:
+                        entry = hass.config_entries.async_get_entry(centry_id)
+                        if entry and getattr(entry, "domain", None) == "switch_as_x":
+                            _LOGGER.info("Removing switch_as_x helper entry %s for wall switch", centry_id)
+                            hass.async_create_task(hass.config_entries.async_remove(centry_id))
+                    continue
         else:
             for ent in related_entries:
                 uid = ent.unique_id or ""
