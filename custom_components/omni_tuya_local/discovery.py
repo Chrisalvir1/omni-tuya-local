@@ -184,9 +184,28 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                 except Exception:
                     payload = None
 
+            sender_ip = addr[0]
+            device_id = None
+            version = "3.3"
+            dps = None
+
             if payload is None:
-                # Intentar desencriptar con claves locales conocidas
-                for key in ("1.j1H3Xd3Sq{93Y}", "UW9}sCU(77KO>PI<"):
+                # 1. Intentar desencriptar con claves locales conocidas por defecto
+                known_keys = ["1.j1H3Xd3Sq{93Y}", "UW9}sCU(77KO>PI<"]
+                
+                # Intentar obtener claves de la store si están disponibles
+                try:
+                    from .storage import TuyaDeviceStore
+                    if hasattr(self, "_hass") and self._hass:
+                        store = TuyaDeviceStore(self._hass)
+                        for d in store.all().values():
+                            k = d.get("local_key")
+                            if k and k not in known_keys:
+                                known_keys.append(k)
+                except Exception:
+                    pass
+
+                for key in known_keys:
                     try:
                         dec = tinytuya.decrypt(data, key.encode("utf-8"))
                         if dec:
@@ -194,11 +213,6 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                             break
                     except Exception:
                         pass
-
-            sender_ip = addr[0]
-            device_id = None
-            version = "3.3"
-            dps = None
 
             if payload and isinstance(payload, dict):
                 device_id = (
@@ -213,7 +227,7 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                 if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
                     dps = payload["data"]["dps"]
 
-            # Si el broadcast proviene de la IP fija del sensor de oficina o bodega
+            # Si el broadcast proviene de IPs conocidas de oficina/bodega como fallback
             if not device_id:
                 if sender_ip == "192.168.110.250":
                     device_id = "bf34dcc476d495df94ud9l"
@@ -234,15 +248,18 @@ async def async_start_udp_listener(hass: HomeAssistant, callback: Any) -> list[a
     for port in (6666, 6667, 7000):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SOL_REUSEADDR, 1)
             try:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             except AttributeError:
                 pass
             sock.bind(("", port))
 
+            protocol = TuyaUDPListener(callback)
+            protocol._hass = hass
+
             transport, _ = await loop.create_datagram_endpoint(
-                lambda: TuyaUDPListener(callback),
+                lambda: protocol,
                 sock=sock,
             )
             transports.append(transport)

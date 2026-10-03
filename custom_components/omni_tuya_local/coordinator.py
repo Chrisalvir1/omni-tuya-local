@@ -173,6 +173,14 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         ):
                             await inventory.add(config)
                             changed += 1
+                            # Sync ConfigEntry data
+                            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                                if entry.data and entry.data.get(CONF_DEVICE_ID) == config["device_id"]:
+                                    new_data = dict(entry.data)
+                                    new_data[CONF_HOST] = config.get("host") or config.get("ip")
+                                    new_data["ip"] = config.get("ip") or config.get("host")
+                                    self.hass.config_entries.async_update_entry(entry, data=new_data)
+                                    break
                 if changed:
                     _LOGGER.info("Recovered %d Tuya LAN address(es) after rescan", changed)
                     for coordinator in self.hass.data.get(DOMAIN, {}).values():
@@ -489,6 +497,13 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ):
                     if did not in target_ids:
                         target_ids.append(did)
+        elif device_id in ("bfbda98cc2e9d3ad13n21x",):
+            for did, cfg in self.store.all().items():
+                if did in ("bfbda98cc2e9d3ad13n21x",) or (
+                    "puerta" in cfg.get("name", "").lower() and "bodega" in cfg.get("name", "").lower()
+                ):
+                    if did not in target_ids:
+                        target_ids.append(did)
 
         for tid in target_ids:
             cfg = self.store.get(tid)
@@ -558,6 +573,30 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_device(self, config: dict[str, Any]) -> None:
         await self.store.add(config)
+        
+        # Sincronizar datos con ConfigEntry para que la IP persista en Home Assistant
+        dev_id = config.get("device_id")
+        ip = config.get("host") or config.get("ip")
+        if dev_id and ip:
+            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                if entry.data and entry.data.get(CONF_DEVICE_ID) == dev_id:
+                    new_data = dict(entry.data)
+                    if new_data.get(CONF_HOST) != ip or new_data.get("ip") != ip:
+                        new_data[CONF_HOST] = ip
+                        new_data["ip"] = ip
+                        self.hass.config_entries.async_update_entry(entry, data=new_data)
+                        break
+
+            # Actualizar configuration_url en el DeviceRegistry de Home Assistant
+            try:
+                from homeassistant.helpers import device_registry as dr
+                dreg = dr.async_get(self.hass)
+                device_entry = dreg.async_get_device(identifiers={(DOMAIN, dev_id)})
+                if device_entry and device_entry.configuration_url != f"http://{ip}":
+                    dreg.async_update_device(device_entry.id, configuration_url=f"http://{ip}")
+            except Exception as err:
+                _LOGGER.debug("Could not update device registry URL for %s: %s", dev_id, err)
+
         await self.async_reload_devices()
 
     async def async_shutdown(self) -> None:
