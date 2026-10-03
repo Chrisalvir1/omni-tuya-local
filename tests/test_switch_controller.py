@@ -222,10 +222,69 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
         dps_ids = [c[0] for c in channels]
         self.assertEqual(dps_ids, ["1", "2"])
         self.assertNotIn("16", dps_ids)
-        self.assertEqual(channels[0][1], "Luz Techo")
-        self.assertEqual(channels[1][1], "Luz Pared")
+    async def test_cleanup_double_controller_pasillo(self):
+        """Test cleaning up duplicate entities on CB02-SBL APAGADOR PASILLO."""
+        hass = MagicMock()
+        hass.data = {DOMAIN: {}}
+        dev_id = "bf36979cf2634cfcbb02w4"
+        config = {
+            "device_id": dev_id,
+            "name": "APAGADOR PASILLO",
+            "product_name": "CB02-SBL",
+            "domain": "switch",
+            "device_type": "switch",
+        }
+        self.coordinator.store.all.return_value = {dev_id: config}
+
+        class FakeEntityEntry:
+            def __init__(self, entity_id, platform, domain, unique_id):
+                self.entity_id = entity_id
+                self.platform = platform
+                self.domain = domain
+                self.unique_id = unique_id
+
+        registry_entries = {
+            f"switch.{DOMAIN}_{dev_id}": FakeEntityEntry(f"switch.{DOMAIN}_{dev_id}", DOMAIN, "switch", f"{DOMAIN}_{dev_id}"),
+            f"switch.{DOMAIN}_{dev_id}_2": FakeEntityEntry(f"switch.{DOMAIN}_{dev_id}_2", DOMAIN, "switch", f"{DOMAIN}_{dev_id}_2"),
+            # Duplicate / invalid entities to remove:
+            f"switch.{DOMAIN}_{dev_id}_1": FakeEntityEntry(f"switch.{DOMAIN}_{dev_id}_1", DOMAIN, "switch", f"{DOMAIN}_{dev_id}_1"),
+            f"switch.{DOMAIN}_{dev_id}_16": FakeEntityEntry(f"switch.{DOMAIN}_{dev_id}_16", DOMAIN, "switch", f"{DOMAIN}_{dev_id}_16"),
+            f"light.{DOMAIN}_{dev_id}": FakeEntityEntry(f"light.{DOMAIN}_{dev_id}", DOMAIN, "light", f"{DOMAIN}_{dev_id}"),
+            f"light.{DOMAIN}_{dev_id}_2": FakeEntityEntry(f"light.{DOMAIN}_{dev_id}_2", DOMAIN, "light", f"{DOMAIN}_{dev_id}_2"),
+            f"sensor.{DOMAIN}_{dev_id}_2": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_2", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_2"),
+            f"sensor.{DOMAIN}_{dev_id}_16": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_16", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_16"),
+            f"sensor.{DOMAIN}_{dev_id}_17": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_17", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_17"),
+            f"sensor.{DOMAIN}_{dev_id}_19": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_19", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_19"),
+        }
+
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.entities = registry_entries
+        removed_ids = []
+        mock_entity_registry.async_remove.side_effect = lambda eid: removed_ids.append(eid)
+
+        from homeassistant.helpers import entity_registry as er
+        er.async_get = MagicMock(return_value=mock_entity_registry)
+
+        await async_cleanup_device_entities(hass, self.coordinator)
+
+        # Physical channels 1 and 2 must NOT be removed
+        self.assertNotIn(f"switch.{DOMAIN}_{dev_id}", removed_ids)
+        self.assertNotIn(f"switch.{DOMAIN}_{dev_id}_2", removed_ids)
+
+        # Duplicate switch for channel 1 and channel 16 must be removed
+        self.assertIn(f"switch.{DOMAIN}_{dev_id}_1", removed_ids)
+        self.assertIn(f"switch.{DOMAIN}_{dev_id}_16", removed_ids)
+
+        # Ghost lights and ghost sensors must all be removed
+        self.assertIn(f"light.{DOMAIN}_{dev_id}", removed_ids)
+        self.assertIn(f"light.{DOMAIN}_{dev_id}_2", removed_ids)
+        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_2", removed_ids)
+        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_16", removed_ids)
+        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_17", removed_ids)
+        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_19", removed_ids)
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

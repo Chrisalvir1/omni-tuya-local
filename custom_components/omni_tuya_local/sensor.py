@@ -186,7 +186,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 or any(w in text for w in ("puerta", "door", "门磁", "ventana", "window", "apertura", "contact", "contacto", "magnetic"))
             )
 
-            # Para interruptores y luces, excluir DPs que son canales de control (1..8)
+            # Un interruptor o apagador de pared físico nunca debe generar entidades de sensores
+            is_wall_switch = (
+                cat in ("kg", "tgkg", "tgq")
+                or dev_type in ("switch", "wall_switch")
+                or config.get("domain") == "switch"
+                or any(w in text for w in (
+                    "apagador", "wall switch", "interruptor", "cb01", "cb02", "cb03", "cb04",
+                    "ts0001", "ts0002", "ts0003", "ts0004", "triple", "doble", "quad", "gang"
+                ))
+            )
+            if is_wall_switch:
+                continue
+
+            # Para otros interruptores (plugs) y luces, excluir DPs que son canales de control (1..8)
             # y funciones de temporizador/control interno (7..16, 21..26, 38..40)
             is_switch_or_light = (
                 config.get("domain") in ("switch", "light")

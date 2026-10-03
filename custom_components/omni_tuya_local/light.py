@@ -112,6 +112,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for config in coordinator.store.all().values():
             if config.get("domain") != "light":
                 continue
+            cat = str(config.get("category") or "").lower()
+            product = str(config.get("product_name") or "").lower()
+            name = str(config.get("name") or "").lower()
+            text = f"{name} {product} {cat}".lower()
+            if any(w in text for w in ("apagador", "wall switch", "interruptor", "cb01", "cb02", "cb03", "cb04", "ts0001", "ts0002", "ts0003", "ts0004")):
+                continue
             for dps_id, name in _light_dps(config, coordinator):
                 unique_suffix = "" if dps_id == "1" else f"_{dps_id}"
                 uid = f"{DOMAIN}_{config['device_id']}{unique_suffix}"

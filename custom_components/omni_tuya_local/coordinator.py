@@ -289,7 +289,24 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Sincronizar el nombre con el Device Registry de HA
             new_name = config.get("name")
             if new_name:
-                device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id), self.entry.entry_id)
+                device = None
+                if hasattr(device_registry, "async_get_device"):
+                    try:
+                        device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
+                    except Exception:
+                        pass
+                if not device and hasattr(device_registry, "async_get_device_by_identifier"):
+                    try:
+                        entry_id = getattr(self, "entry", None) and self.entry.entry_id
+                        if entry_id:
+                            device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id), entry_id)
+                    except Exception:
+                        pass
+                    if not device:
+                        try:
+                            device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id))
+                        except Exception:
+                            pass
                 # Home Assistant renamed ``original_name`` to ``name`` in its
                 # device-registry model.  Keep compatibility with both APIs;
                 # accessing the removed field previously made cloud sync fail
