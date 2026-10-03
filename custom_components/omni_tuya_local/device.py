@@ -31,6 +31,7 @@ class OmniTuyaDevice:
     ) -> None:
         self.hass = hass
         self.config = TuyaDeviceConfig.from_dict(config)
+        self._last_dps: dict[str, Any] = dict(config.get("initial_dps") or {})
         # Cloud status is a fallback only for sleeping battery sensors that
         # cannot expose their event DPS over the local Tuya protocol.  Never
         # overwrite a regular LAN device with a delayed cloud value.
@@ -47,7 +48,6 @@ class OmniTuyaDevice:
         self._tuya = None
         self._push_tuya = None
         self._available = True if self.is_sleep_device else False
-        self._last_dps: dict[str, Any] = dict(config.get("initial_dps") or {})
         self._last_status_at: float = 0.0
         self._lock_obj: asyncio.Lock | None = None
         self._command_lock_obj: asyncio.Lock | None = None
