@@ -289,7 +289,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Sincronizar el nombre con el Device Registry de HA
             new_name = config.get("name")
             if new_name:
-                device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
+                device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id), self.entry.entry_id)
                 # Home Assistant renamed ``original_name`` to ``name`` in its
                 # device-registry model.  Keep compatibility with both APIs;
                 # accessing the removed field previously made cloud sync fail
@@ -525,7 +525,10 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             dps = await asyncio.wait_for(
                 self.hass.async_add_executor_job(device._sync_status),
-                timeout=2.5,
+                # ``_sync_status`` uses TinyTuya's three-second socket timeout
+                # (and can retry once).  A two-second outer timeout cancelled
+                # legitimate replies from a door sensor just after wake-up.
+                timeout=8.0,
             )
             if dps and isinstance(dps, dict):
                 device._mark_online()

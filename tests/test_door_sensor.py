@@ -60,10 +60,11 @@ class TestDoorSensor(unittest.TestCase):
             "device_type": "door_sensor",
         }
 
-        # 1. When no DPS is received yet (sensor is asleep):
+        # 1. When no DPS is received yet (sensor is asleep), do not invent a
+        # closed state.  The UI must distinguish unknown from physically closed.
         coordinator.dps_value.return_value = None
         entity = OmniTuyaBinarySensor(coordinator, cfg)
-        self.assertFalse(entity.is_on)  # Should default to False (Closed), never None
+        self.assertIsNone(entity.is_on)
 
         # 2. Open states
         for val in (True, "open", "OPEN", "opened", "1", "true"):

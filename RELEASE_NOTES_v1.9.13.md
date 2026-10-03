@@ -1,4 +1,4 @@
-# Omni Tuya Local v1.2.0 Release Notes
+# Omni Tuya Local v1.9.13 Release Notes
 
 ## Corrección de Botones Duplicados y Fantasma en Controladores Multi-Gang (CB03 / Apagadores Triples)
 
