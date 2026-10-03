@@ -131,6 +131,21 @@ def _is_energy_capable_device(config: dict[str, Any], raw_dps: dict[str, Any]) -
     product = str(config.get("product_name") or "").lower()
     name = str(config.get("name") or "").lower()
 
+    # Si es un interruptor de pared estándar (kg, tgkg, tgq, apagador, wall switch),
+    # NO habilitar sensores de energía a menos que reporte activamente valores numéricos > 0 en raw_dps
+    is_wall_switch = (
+        cat in ("kg", "tgkg", "tgq")
+        or dev_type == "switch"
+        or any(w in product or w in name for w in ("apagador", "wall switch", "interruptor"))
+    )
+    if is_wall_switch:
+        if isinstance(raw_dps, dict):
+            for dp_key in ("17", "18", "19", "20", 17, 18, 19, 20):
+                val = raw_dps.get(dp_key)
+                if val is not None and isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+                    return True
+        return False
+
     if cat in ("cz", "pc", "sp", "dlq", "tdq"):
         return True
     if dev_type in ("outlet", "power_strip"):
@@ -171,6 +186,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 or any(w in text for w in ("puerta", "door", "门磁", "ventana", "window", "apertura", "contact", "contacto", "magnetic"))
             )
 
+            # Para interruptores y luces, excluir DPs que son canales de control (1..8)
+            # y funciones de temporizador/control interno (7..16, 21..26, 38..40)
+            is_switch_or_light = (
+                config.get("domain") in ("switch", "light")
+                or dev_type in ("switch", "outlet", "power_strip", "light")
+                or cat in ("kg", "tgkg", "tgq")
+            )
+            excluded_dps: set[str] = set()
+            if is_switch_or_light:
+                for i in range(1, 9):
+                    excluded_dps.add(str(i))
+                excluded_dps |= {
+                    "7", "8", "9", "10", "11", "12", "14", "15", "16", "21", "22", "23", "24", "25", "26", "38", "39", "40"
+                }
+
             # 1. Procesar sensores definidos en dps_map
             if config.get("domain") == "sensor" and not dps_map and not is_door_window_or_binary:
                 dps_map = {"1": {"name": config.get("name"), "unit": None}}
@@ -179,7 +209,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
             for dps_id, desc in dps_map.items():
                 dps_id = str(dps_id)
-                if not dps_id.isdigit():
+                if not dps_id.isdigit() or dps_id in excluded_dps:
                     continue
                 configured_dps.add(dps_id)
                 uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"
@@ -204,7 +234,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 if not isinstance(func, dict):
                     continue
                 dp_id = function_id(func)
-                if not dp_id or dp_id in configured_dps:
+                if not dp_id or dp_id in configured_dps or dp_id in excluded_dps:
                     continue
                 code = str(func.get("code") or func.get("identifier") or "").lower()
                 func_type = str(func.get("type") or "").lower()
@@ -295,7 +325,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
             # 5. Todos los valores numéricos/texto observados en LAN (discovered_dps)
             for dps_id, info in discovered_dps(config).items():
-                if info["kind"] not in {"number", "text"} or dps_id in configured_dps:
+                if info["kind"] not in {"number", "text"} or dps_id in configured_dps or dps_id in excluded_dps:
                     continue
                 configured_dps.add(dps_id)
                 uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"

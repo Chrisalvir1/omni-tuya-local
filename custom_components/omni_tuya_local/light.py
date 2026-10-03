@@ -29,7 +29,7 @@ from .coordinator import OmniTuyaLocalCoordinator
 from .dps import dps_label
 from .entity import OmniTuyaEntity
 from .pet_feeder import function_id
-from .util import ha_to_tuya_brightness, tuya_to_ha_brightness
+from .util import ha_to_tuya_brightness, tuya_to_ha_brightness, max_gangs_for_device
 
 
 def _light_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tuple[str, str | None]]:
@@ -42,9 +42,12 @@ def _light_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tupl
     if not raw_dps and coordinator.devices.get(config.get("device_id")):
         raw_dps = coordinator.devices[config.get("device_id")].dps
 
+    max_gangs = max_gangs_for_device(config, raw_dps)
+    allowed_gangs = {str(i) for i in range(1, max_gangs + 1)}
+
     # 1. dps_map explícito
     for dps_id, desc in dps_map.items():
-        if str(dps_id).isdigit():
+        if str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
             name = desc.get("name") if isinstance(desc, dict) else (desc if isinstance(desc, str) else None)
             channels_dict[str(dps_id)] = name
 
@@ -53,26 +56,30 @@ def _light_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tupl
         if not isinstance(func, dict):
             continue
         dp_id = function_id(func)
-        if not dp_id or not dp_id.isdigit():
+        if not dp_id or not dp_id.isdigit() or dp_id not in allowed_gangs:
             continue
-        code = str(func.get("code") or func.get("identifier") or "").lower()
-        if code in ("switch", "switch_led", "power") or code.startswith("switch_") or code.startswith("led_"):
+        code = str(func.get("code") or func.get("identifier") or "").lower().strip()
+        is_light_code = (
+            code in ("switch", "switch_led", "power", "light")
+            or any(code == f"{pfx}_{i}" for pfx in ("switch", "power", "light", "led") for i in range(1, 9))
+        )
+        if is_light_code:
             name = func.get("name") or func.get("code")
             if name:
                 name = str(name).replace("_", " ").strip().title()
             if dp_id not in channels_dict or not channels_dict[dp_id]:
                 channels_dict[dp_id] = name
 
-    # 3. discovered_dps persistido en config (canales 1..8)
+    # 3. discovered_dps persistido en config (canales permitidos)
     for dps_id, info in disc_dps.items():
-        if str(dps_id).isdigit() and isinstance(info, dict) and info.get("kind") == "boolean":
-            if int(dps_id) in range(1, 9) and str(dps_id) not in channels_dict:
+        if str(dps_id).isdigit() and str(dps_id) in allowed_gangs and isinstance(info, dict) and info.get("kind") == "boolean":
+            if str(dps_id) not in channels_dict:
                 lbl = info.get("name")
                 channels_dict[str(dps_id)] = lbl if lbl and lbl != f"DPS {dps_id}" else None
 
-    # 4. raw_dps en vivo (canales 1..8)
+    # 4. raw_dps en vivo (canales permitidos)
     for dps_id, value in raw_dps.items():
-        if isinstance(value, bool) and str(dps_id).isdigit() and int(dps_id) in range(1, 9):
+        if isinstance(value, bool) and str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
             if str(dps_id) not in channels_dict:
                 channels_dict[str(dps_id)] = None
 

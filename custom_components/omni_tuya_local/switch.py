@@ -13,6 +13,7 @@ from .coordinator import OmniTuyaLocalCoordinator
 from .dps import dps_label
 from .entity import OmniTuyaEntity
 from .pet_feeder import function_id, pet_feeder_feed
+from .util import max_gangs_for_device
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -24,12 +25,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for config in coordinator.store.all().values():
             device_domain = config.get("domain")
             device_type = config.get("device_type") or "generic"
-            if (
-                device_domain != "switch"
-                and device_type not in _PREDEFINED_SWITCHES
-                and device_type not in ("outlet", "power_strip", "switch")
-            ):
-                continue
+            # Si el dispositivo no tiene dominio 'switch', solo crear switch si es
+            # un dispositivo con switches predefinidos secundarios (ej. pet_feeder).
+            # Evita crear switches duplicados si el dispositivo está configurado como light u otro dominio.
+            if device_domain != "switch":
+                if device_type not in _PREDEFINED_SWITCHES:
+                    continue
             for dps_id, name in _switch_dps(config, coordinator):
                 unique_suffix = "" if dps_id == "1" else f"_{dps_id}"
                 uid = f"{DOMAIN}_{config['device_id']}{unique_suffix}"
@@ -223,9 +224,12 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
     if not raw_dps and coordinator.devices.get(config.get("device_id")):
         raw_dps = coordinator.devices[config.get("device_id")].dps
 
-    # 2. dps_map explícito
+    max_gangs = max_gangs_for_device(config, raw_dps)
+    allowed_gangs = {str(i) for i in range(1, max_gangs + 1)}
+
+    # 2. dps_map explícito (solo canales válidos según max_gangs)
     for dps_id, desc in dps_map.items():
-        if str(dps_id).isdigit():
+        if str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
             name = desc.get("name") if isinstance(desc, dict) else (desc if isinstance(desc, str) else None)
             channels_dict[str(dps_id)] = name
 
@@ -234,16 +238,14 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
         if not isinstance(func, dict):
             continue
         dp_id = function_id(func)
-        if not dp_id or not dp_id.isdigit():
+        if not dp_id or not dp_id.isdigit() or dp_id not in allowed_gangs:
             continue
-        code = str(func.get("code") or func.get("identifier") or "").lower()
-        func_type = str(func.get("type") or "").lower()
+        code = str(func.get("code") or func.get("identifier") or "").lower().strip()
+        # Solo códigos de canal real (switch, switch_1..8, power, power_1..8, outlet, outlet_1..8).
+        # Ignorar configuraciones internas que empiezan con switch_ (ej. switch_backlight, switch_led, switch_inching).
         is_switch_code = (
             code in ("switch", "power", "outlet")
-            or code.startswith("switch_")
-            or code.startswith("power_")
-            or code.startswith("outlet_")
-            or (func_type in ("boolean", "bool") and "switch" in code)
+            or any(code == f"{pfx}_{i}" for pfx in ("switch", "power", "outlet") for i in range(1, 9))
         )
         if is_switch_code:
             name = func.get("name") or func.get("code")
@@ -252,18 +254,18 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
             if dp_id not in channels_dict or not channels_dict[dp_id]:
                 channels_dict[dp_id] = name
 
-    # 4. discovered_dps persistido en config (DPS booleanos observados en LAN)
+    # 4. discovered_dps persistido en config (DPS booleanos observados en LAN dentro de allowed_gangs)
     for dps_id, info in disc_dps.items():
-        if not str(dps_id).isdigit():
+        if not str(dps_id).isdigit() or str(dps_id) not in allowed_gangs:
             continue
         if isinstance(info, dict) and info.get("kind") == "boolean":
             if str(dps_id) not in channels_dict:
                 lbl = info.get("name")
                 channels_dict[str(dps_id)] = lbl if lbl and lbl != f"DPS {dps_id}" else None
 
-    # 5. raw_dps en vivo (auto-detectar canales booleanos activos en LAN)
+    # 5. raw_dps en vivo (auto-detectar canales booleanos activos en LAN dentro de allowed_gangs)
     for dps_id, value in raw_dps.items():
-        if isinstance(value, bool) and str(dps_id).isdigit():
+        if isinstance(value, bool) and str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
             if str(dps_id) not in channels_dict:
                 channels_dict[str(dps_id)] = None
 

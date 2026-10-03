@@ -319,6 +319,11 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.hass, config, on_push=self._handle_push_update
                 )
         await self.async_request_refresh()
+        try:
+            from . import async_cleanup_device_entities
+            await async_cleanup_device_entities(self.hass, self)
+        except Exception as err:
+            _LOGGER.debug("Could not run entity cleanup during reload: %s", err)
         self._notify_entity_refresh()
 
     async def async_setup(self) -> None:

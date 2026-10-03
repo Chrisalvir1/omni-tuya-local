@@ -173,6 +173,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if hub_device:
         device_registry.async_remove_device(hub_device.id)
 
+    # Limpiar entidades duplicadas/obsoletas de dispositivos (canales no físicos, sensores espurios, etc.)
+    await async_cleanup_device_entities(hass, coordinator)
+
     return True
 
 
@@ -261,6 +264,95 @@ class _ScopedTuyaDeviceStore:
         return await self._store.remove(device_id)
 
 
+async def async_cleanup_device_entities(
+    hass: HomeAssistant, coordinator: OmniTuyaLocalCoordinator
+) -> None:
+    """Clean up duplicate, ghost, or mismatched entities from the Home Assistant entity registry."""
+    from homeassistant.helpers import entity_registry as er
+    from .util import max_gangs_for_device
+
+    entity_registry = er.async_get(hass)
+    if not entity_registry:
+        return
+
+    _internal_control_dps = {
+        "7", "8", "9", "10", "11", "12", "14", "15", "16",
+        "21", "22", "23", "24", "25", "26", "38", "39", "40",
+    }
+
+    stale_entities: list[str] = []
+
+    for config in coordinator.store.all().values():
+        dev_id = config.get("device_id")
+        if not dev_id:
+            continue
+        dev_domain = config.get("domain") or "switch"
+        dev_type = config.get("device_type") or "generic"
+        cat = str(config.get("category") or "").lower()
+        product = str(config.get("product_name") or "").lower()
+        name = str(config.get("name") or "").lower()
+        max_gangs = max_gangs_for_device(config)
+        allowed_gangs = {str(i) for i in range(1, max_gangs + 1)}
+
+        prefix = f"{DOMAIN}_{dev_id}"
+
+        for entity_entry in list(entity_registry.entities.values()):
+            if entity_entry.platform != DOMAIN:
+                continue
+            uid = entity_entry.unique_id or ""
+            if not (uid == prefix or uid.startswith(f"{prefix}_")):
+                continue
+
+            ent_domain = entity_entry.domain
+
+            # 1. Duplicación cruzada entre switch y light:
+            if dev_domain == "switch" and ent_domain == "light":
+                stale_entities.append(entity_entry.entity_id)
+                continue
+            if dev_domain == "light" and ent_domain == "switch":
+                stale_entities.append(entity_entry.entity_id)
+                continue
+
+            # 2. Canales no físicos que excedan max_gangs (ej. Canal 16 en apagador de 3 botones)
+            if ent_domain in ("switch", "light"):
+                suffix = uid[len(prefix):]
+                if suffix.startswith("_"):
+                    suffix_dp = suffix[1:]
+                    if suffix_dp.isdigit() and suffix_dp not in allowed_gangs:
+                        stale_entities.append(entity_entry.entity_id)
+                        continue
+
+            # 3. Sensores fantasma/duplicados en dispositivos de tipo switch/light:
+            if ent_domain == "sensor":
+                suffix = uid[len(prefix):]
+                if suffix.startswith("_"):
+                    suffix_dp = suffix[1:]
+                    # Sensores para DPs que son canales de switch (1..8)
+                    if suffix_dp.isdigit() and int(suffix_dp) in range(1, 9):
+                        stale_entities.append(entity_entry.entity_id)
+                        continue
+                    # Sensores para funciones internas (cuenta regresiva, backlight, relay_status)
+                    if suffix_dp in _internal_control_dps:
+                        stale_entities.append(entity_entry.entity_id)
+                        continue
+                    # Sensores de energía para interruptores de pared que no miden consumo
+                    is_wall_switch = (
+                        cat in ("kg", "tgkg", "tgq")
+                        or dev_type == "switch"
+                        or any(w in product or w in name for w in ("apagador", "wall switch", "interruptor"))
+                    )
+                    if is_wall_switch and suffix_dp in ("17", "18", "19", "20"):
+                        raw_dps = (coordinator.data or {}).get("dps", {}).get(dev_id, {})
+                        val = raw_dps.get(suffix_dp) if isinstance(raw_dps, dict) else None
+                        if val is None or val == 0:
+                            stale_entities.append(entity_entry.entity_id)
+                            continue
+
+    for eid in stale_entities:
+        _LOGGER.info("Cleaning up duplicate/stale entity %s from registry", eid)
+        entity_registry.async_remove(eid)
+
+
 def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_ADD_DEVICE):
         return
@@ -297,6 +389,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         updated = dict(current)
         updated["domain"] = call.data["domain"]
         stored = await coord.store.add(updated)
+        await async_cleanup_device_entities(hass, coord)
         await coord.async_reload_devices()
         return {"device": stored}
 
@@ -309,6 +402,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         updated = dict(current)
         updated[CONF_DEVICE_TYPE] = call.data[CONF_DEVICE_TYPE]
         stored = await coord.store.add(updated)
+        await async_cleanup_device_entities(hass, coord)
         await coord.async_reload_devices()
         return {"device": stored}
 

@@ -156,13 +156,33 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
 
 def discovered_dps(config: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Return persisted LAN DPS schema, normalizing older stored data."""
+    from .util import max_gangs_for_device
+
     result: dict[str, dict[str, str]] = {}
+    max_gangs = max_gangs_for_device(config)
+    dev_type = str(config.get("device_type") or "").lower()
+    cat = str(config.get("category") or "").lower()
+    is_switch_or_light = (
+        config.get("domain") in ("switch", "light")
+        or dev_type in ("switch", "outlet", "power_strip", "light")
+        or cat in ("kg", "tgkg", "tgq")
+    )
+    _internal_control_dps = {
+        "7", "8", "9", "10", "11", "12", "14", "15", "16",
+        "21", "22", "23", "24", "25", "26", "38", "39", "40",
+    }
+
     for dps_id, info in (config.get("discovered_dps") or {}).items():
         if not str(dps_id).isdigit() or not isinstance(info, dict):
             continue
         kind = info.get("kind")
         if kind not in {"boolean", "number", "text"}:
             continue
+        if is_switch_or_light:
+            if kind == "boolean" and int(dps_id) > max_gangs:
+                continue
+            if str(dps_id) in _internal_control_dps:
+                continue
         result[str(dps_id)] = {
             "kind": kind,
             "name": str(info.get("name") or dps_label(config, dps_id)),
@@ -172,12 +192,34 @@ def discovered_dps(config: dict[str, Any]) -> dict[str, dict[str, str]]:
 
 def schema_from_dps(config: dict[str, Any], values: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Build the safe, persisted schema from an actual local status payload."""
+    from .util import max_gangs_for_device
+
+    max_gangs = max_gangs_for_device(config)
+    dev_type = str(config.get("device_type") or "").lower()
+    cat = str(config.get("category") or "").lower()
+    is_switch_or_light = (
+        config.get("domain") in ("switch", "light")
+        or dev_type in ("switch", "outlet", "power_strip", "light")
+        or cat in ("kg", "tgkg", "tgq")
+    )
+    _internal_control_dps = {
+        "7", "8", "9", "10", "11", "12", "14", "15", "16",
+        "21", "22", "23", "24", "25", "26", "38", "39", "40",
+    }
+
     schema = discovered_dps(config)
     for dps_id, value in values.items():
         dps_id = str(dps_id)
         if not dps_id.isdigit():
             continue
         kind = dps_kind(value)
-        if kind:
-            schema[dps_id] = {"kind": kind, "name": dps_label(config, dps_id)}
+        if not kind:
+            continue
+        if is_switch_or_light:
+            if kind == "boolean" and int(dps_id) > max_gangs:
+                continue
+            if dps_id in _internal_control_dps:
+                continue
+        schema[dps_id] = {"kind": kind, "name": dps_label(config, dps_id)}
     return schema
+
