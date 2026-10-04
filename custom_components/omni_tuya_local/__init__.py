@@ -325,8 +325,15 @@ async def async_cleanup_device_entities(
         name = str(config.get("name") or "").lower()
         text = f"{name} {product} {dev_type} {cat}".lower()
 
-        is_wall_switch = (
-            cat in ("kg", "tgkg", "tgq")
+        is_dimmer_or_light = (
+            dev_domain == "light"
+            or dev_type in ("dimmer", "light")
+            or "dimmer" in text
+            or "调光" in text
+        )
+
+        is_wall_switch = not is_dimmer_or_light and (
+            cat in ("kg",)
             or dev_type in ("switch", "wall_switch")
             or dev_domain == "switch"
             or any(w in text for w in (
