@@ -308,16 +308,22 @@ class OmniTuyaDevice:
         )
 
     def _sync_set_status(self, value: bool, dps_id: int) -> Any:
-        # A fresh, non-persistent client keeps a queued status poll from
-        # delaying user control. ``nowait`` still performs the local TCP send;
-        # state is verified by the background poll afterwards.
-        return self._build_tuya().set_status(value, dps_id, nowait=True)
+        device = self._get_or_build_tuya()
+        try:
+            res = device.set_status(value, dps_id, nowait=False)
+            if self._command_accepted(res):
+                return res
+        except Exception:
+            pass
+        return device.set_value(dps_id, value, nowait=False)
 
     def _sync_set_value(self, dps_id: int, value: Any) -> Any:
-        return self._build_tuya().set_value(dps_id, value, nowait=True)
+        device = self._get_or_build_tuya()
+        return device.set_value(dps_id, value, nowait=False)
 
     def _sync_set_values(self, dps_dict: dict[str, Any]) -> Any:
-        return self._build_tuya().set_multiple_values(dps_dict, nowait=True)
+        device = self._get_or_build_tuya()
+        return device.set_multiple_values(dps_dict, nowait=False)
 
     def _sync_probe_protocol_versions(self) -> tuple[str, dict[str, Any]] | None:
         """Try alternative Tuya LAN protocol versions safely."""
@@ -434,15 +440,23 @@ class OmniTuyaDevice:
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected set_status: {response}")
                 self._last_dps[str(dps_id)] = value
+                self._last_dps[f"switch_{dps_id}"] = value
+                if dps_id == 1:
+                    self._last_dps["switch"] = value
                 self._mark_online()
                 return True
             except asyncio.TimeoutError:
-                _LOGGER.error(
-                    "Timeout sending set_status to %s dps %s", self.device_id, dps_id
+                _LOGGER.debug(
+                    "Timeout waiting for set_status response from %s dps %s; applying optimistic state",
+                    self.device_id, dps_id
                 )
+                self._last_dps[str(dps_id)] = value
+                self._last_dps[f"switch_{dps_id}"] = value
+                if dps_id == 1:
+                    self._last_dps["switch"] = value
+                self._mark_online()
                 self._invalidate_client()
-                self._mark_failure("Timeout sending set_status")
-                return False
+                return True
             except Exception as err:
                 _LOGGER.error(
                     "Command failed for %s dps %s: %s", self.device_id, dps_id, err
@@ -467,7 +481,22 @@ class OmniTuyaDevice:
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected set_value: {response}")
                 self._last_dps[str(dps_id)] = value
+                self._last_dps[f"switch_{dps_id}"] = value
+                if dps_id == 1:
+                    self._last_dps["switch"] = value
                 self._mark_online()
+                return True
+            except asyncio.TimeoutError:
+                _LOGGER.debug(
+                    "Timeout waiting for set_value response from %s dps %s; applying optimistic state",
+                    self.device_id, dps_id
+                )
+                self._last_dps[str(dps_id)] = value
+                self._last_dps[f"switch_{dps_id}"] = value
+                if dps_id == 1:
+                    self._last_dps["switch"] = value
+                self._mark_online()
+                self._invalidate_client()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(

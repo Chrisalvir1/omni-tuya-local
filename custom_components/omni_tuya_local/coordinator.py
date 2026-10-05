@@ -673,7 +673,11 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not dev_dps and device_id in self.devices:
             dev_dps = self.devices[device_id].dps
         if not dev_dps or not isinstance(dev_dps, dict):
-            return None
+            cfg = self.store.get(device_id)
+            if cfg and isinstance(cfg.get("initial_dps"), dict):
+                dev_dps = cfg["initial_dps"]
+            else:
+                return None
 
         str_id = str(dps_id)
         if str_id in dev_dps:
@@ -684,6 +688,23 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return dev_dps[int_id]
         except (ValueError, TypeError):
             pass
+
+        _ALIASES = {
+            "1": ("switch_1", "switch", "power_1", "power", "outlet_1", "outlet", "doorcontact_state"),
+            "2": ("switch_2", "power_2", "outlet_2", "battery_percentage", "electricity_left", "battery"),
+            "3": ("switch_3", "power_3", "outlet_3"),
+            "4": ("switch_4", "power_4", "outlet_4", "temper_alarm", "tamper"),
+            "5": ("switch_5", "power_5", "outlet_5"),
+            "6": ("switch_6", "power_6", "outlet_6"),
+            "17": ("add_ele", "energy", "total_forward_energy", "add_ele_1"),
+            "18": ("cur_current", "current", "cur_current_1"),
+            "19": ("cur_power", "power", "cur_power_1"),
+            "20": ("cur_voltage", "voltage"),
+        }
+        for alias in _ALIASES.get(str_id, ()):
+            if alias in dev_dps:
+                return dev_dps[alias]
+
         return None
 
     def is_available(self, device_id: str) -> bool:
