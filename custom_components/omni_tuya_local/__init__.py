@@ -171,12 +171,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         hub_device = None
-        if hasattr(device_registry, "async_get_device"):
-            try:
-                hub_device = device_registry.async_get_device(identifiers={(DOMAIN, "hub")})
-            except Exception:
-                pass
-        if not hub_device and hasattr(device_registry, "async_get_device_by_identifier"):
+        if hasattr(device_registry, "async_get_device_by_identifier"):
             try:
                 hub_device = device_registry.async_get_device_by_identifier((DOMAIN, "hub"), entry.entry_id)
             except Exception:
@@ -184,6 +179,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     hub_device = device_registry.async_get_device_by_identifier((DOMAIN, "hub"))
                 except Exception:
                     pass
+        if not hub_device and hasattr(device_registry, "async_get_device"):
+            try:
+                hub_device = device_registry.async_get_device(identifiers={(DOMAIN, "hub")})
+            except Exception:
+                pass
         if hub_device:
             device_registry.async_remove_device(hub_device.id)
     except Exception as err:
@@ -356,12 +356,7 @@ async def async_cleanup_device_entities(
         # 1. Obtener device de HA si está disponible
         ha_device = None
         if device_registry:
-            if hasattr(device_registry, "async_get_device"):
-                try:
-                    ha_device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
-                except Exception:
-                    pass
-            if not ha_device and hasattr(device_registry, "async_get_device_by_identifier"):
+            if hasattr(device_registry, "async_get_device_by_identifier"):
                 try:
                     entry_id = getattr(coordinator, "entry", None) and coordinator.entry.entry_id
                     if entry_id:
@@ -373,6 +368,11 @@ async def async_cleanup_device_entities(
                         ha_device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id))
                     except Exception:
                         pass
+            if not ha_device and hasattr(device_registry, "async_get_device"):
+                try:
+                    ha_device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
+                except Exception:
+                    pass
 
         # 2. Recolectar todas las entidades asociadas al dispositivo
         related_entries = []

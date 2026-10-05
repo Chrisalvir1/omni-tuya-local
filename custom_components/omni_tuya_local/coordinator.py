@@ -298,12 +298,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             new_name = config.get("name")
             if new_name:
                 device = None
-                if hasattr(device_registry, "async_get_device"):
-                    try:
-                        device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
-                    except Exception:
-                        pass
-                if not device and hasattr(device_registry, "async_get_device_by_identifier"):
+                if hasattr(device_registry, "async_get_device_by_identifier"):
                     try:
                         entry_id = getattr(self, "entry", None) and self.entry.entry_id
                         if entry_id:
@@ -315,6 +310,11 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id))
                         except Exception:
                             pass
+                if not device and hasattr(device_registry, "async_get_device"):
+                    try:
+                        device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
+                    except Exception:
+                        pass
                 # Home Assistant renamed ``original_name`` to ``name`` in its
                 # device-registry model.  Keep compatibility with both APIs;
                 # accessing the removed field previously made cloud sync fail
@@ -591,7 +591,15 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 from homeassistant.helpers import device_registry as dr
                 dreg = dr.async_get(self.hass)
-                device_entry = dreg.async_get_device(identifiers={(DOMAIN, dev_id)})
+                device_entry = None
+                if hasattr(dreg, "async_get_device_by_identifier"):
+                    entry_id = getattr(self, "entry", None) and self.entry.entry_id
+                    if entry_id:
+                        device_entry = dreg.async_get_device_by_identifier((DOMAIN, dev_id), entry_id)
+                    if not device_entry:
+                        device_entry = dreg.async_get_device_by_identifier((DOMAIN, dev_id))
+                if not device_entry and hasattr(dreg, "async_get_device"):
+                    device_entry = dreg.async_get_device(identifiers={(DOMAIN, dev_id)})
                 if device_entry and device_entry.configuration_url != f"http://{ip}":
                     dreg.async_update_device(device_entry.id, configuration_url=f"http://{ip}")
             except Exception as err:
