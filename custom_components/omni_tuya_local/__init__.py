@@ -332,10 +332,15 @@ async def async_cleanup_device_entities(
             or "调光" in text
         )
 
-        is_wall_switch = not is_dimmer_or_light and (
+        is_outlet_or_plug = (
+            dev_type in ("outlet", "power_strip")
+            or cat in ("cz", "pc", "sp")
+            or any(w in text for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo"))
+        )
+
+        is_wall_switch = not is_dimmer_or_light and not is_outlet_or_plug and (
             cat in ("kg",)
             or dev_type in ("switch", "wall_switch")
-            or dev_domain == "switch"
             or any(w in text for w in (
                 "apagador", "wall switch", "interruptor", "cb01", "cb02", "cb03", "cb04",
                 "ts0001", "ts0002", "ts0003", "ts0004", "triple", "doble", "quad", "gang"

@@ -283,6 +283,74 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
         self.assertIn(f"sensor.{DOMAIN}_{dev_id}_17", removed_ids)
         self.assertIn(f"sensor.{DOMAIN}_{dev_id}_19", removed_ids)
 
+    async def test_cleanup_preserves_plug_and_sensors(self):
+        """A Wifi Plug / outlet must NOT be treated as a wall switch; its power sensors must be preserved."""
+        hass = MagicMock()
+        hass.data = {DOMAIN: {}}
+        dev_id = "bf2d99b46f631e0a6edjhi"
+        config = {
+            "device_id": dev_id,
+            "name": "NEON SALA",
+            "product_name": "Wifi Plug",
+            "domain": "switch",
+            "device_type": "outlet",
+            "category": "cz",
+        }
+        self.coordinator.store.all.return_value = {dev_id: config}
+
+        class FakeEntityEntry:
+            def __init__(self, entity_id, platform, domain, unique_id):
+                self.entity_id = entity_id
+                self.platform = platform
+                self.domain = domain
+                self.unique_id = unique_id
+
+        registry_entries = {
+            f"switch.{DOMAIN}_{dev_id}": FakeEntityEntry(f"switch.{DOMAIN}_{dev_id}", DOMAIN, "switch", f"{DOMAIN}_{dev_id}"),
+            f"sensor.{DOMAIN}_{dev_id}_17": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_17", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_17"),
+            f"sensor.{DOMAIN}_{dev_id}_18": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_18", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_18"),
+            f"sensor.{DOMAIN}_{dev_id}_19": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_19", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_19"),
+            f"sensor.{DOMAIN}_{dev_id}_20": FakeEntityEntry(f"sensor.{DOMAIN}_{dev_id}_20", DOMAIN, "sensor", f"{DOMAIN}_{dev_id}_20"),
+        }
+
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.entities = registry_entries
+        removed_ids = []
+        mock_entity_registry.async_remove.side_effect = lambda eid: removed_ids.append(eid)
+
+        from homeassistant.helpers import entity_registry as er
+        er.async_get = MagicMock(return_value=mock_entity_registry)
+
+        await async_cleanup_device_entities(hass, self.coordinator)
+
+        # Neither the switch nor the sensors should be removed
+        self.assertNotIn(f"switch.{DOMAIN}_{dev_id}", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_17", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_18", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_19", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_20", removed_ids)
+
+    async def test_device_optimistic_command(self):
+        """async_set_status must update internal DPS optimistically upon success."""
+        from custom_components.omni_tuya_local.device import OmniTuyaDevice
+
+        hass = MagicMock()
+        hass.async_add_executor_job = AsyncMock(return_value={"success": True})
+
+        cfg = {
+            "device_id": "bf2d99b46f631e0a6edjhi",
+            "host": "192.168.110.11",
+            "local_key": "0123456789abcdef",
+            "domain": "switch",
+        }
+        dev = OmniTuyaDevice(hass, cfg)
+        self.assertIsNone(dev.dps.get("1"))
+
+        success = await dev.async_set_status(True, 1)
+        self.assertTrue(success)
+        self.assertTrue(dev.dps.get("1"))
+        self.assertTrue(dev.available)
+
 
 if __name__ == "__main__":
     unittest.main()

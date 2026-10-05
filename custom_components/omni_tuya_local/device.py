@@ -201,13 +201,23 @@ class OmniTuyaDevice:
         """Llamada síncrona a tinytuya.status(). Retorna dps o None."""
         device = self._get_or_build_tuya()
         raw = device.status()
+        if raw and isinstance(raw, dict) and "dps" in raw and raw["dps"]:
+            self._last_error_detail = ""
+            return dict(raw["dps"])
+
+        # Fallback para enchufes/tomacorrientes que no responden a DP_QUERY (cmd 10)
+        try:
+            upd = device.updatedps([1, 2, 9, 17, 18, 19, 20])
+            if upd and isinstance(upd, dict) and "dps" in upd and upd["dps"]:
+                self._last_error_detail = ""
+                return dict(upd["dps"])
+        except Exception:
+            pass
+
         if raw and isinstance(raw, dict):
             if "dps" in raw:
                 self._last_error_detail = ""
                 return dict(raw["dps"])
-            # TinyTuya reports normal LAN packet loss as a dictionary rather
-            # than raising. Keep the reason for diagnostics but avoid emitting
-            # a warning for every retry/poll cycle.
             self._last_error_detail = str(raw.get("Payload") or raw.get("Error") or raw)
             _LOGGER.debug("Tuya device %s status returned no dps: %s", self.device_id, raw)
         else:
@@ -270,6 +280,9 @@ class OmniTuyaDevice:
             # un fallo de conexión TCP es el estado normal mientras duermen, no una desconexión.
             self._available = True
             return
+
+        detail = str(reason)
+        self._consecutive_failures += 1
 
         if self._consecutive_failures >= _UNAVAILABLE_AFTER_FAILURES:
             if self._available and self._consecutive_failures == _UNAVAILABLE_AFTER_FAILURES:
@@ -376,6 +389,32 @@ class OmniTuyaDevice:
                 if attempt + 1 < _MAX_STATUS_ATTEMPTS:
                     await asyncio.sleep(0.2)
 
+            # Si todos los intentos fallaron y el error sugiere protocolo incompatible, probar versiones LAN alternativas
+            if (
+                any(err_term in self._last_error_detail for err_term in ("Check device key or version", "904", "914", "Unexpected Payload", "Error from device"))
+                and self._probed_config_version != str(self.config.version)
+            ):
+                self._probed_config_version = str(self.config.version)
+                try:
+                    probe = await asyncio.wait_for(
+                        self.hass.async_add_executor_job(self._sync_probe_protocol_versions),
+                        timeout=10,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    probe = None
+                if probe is not None:
+                    version, dps = probe
+                    self._runtime_version = version
+                    self._detected_protocol_version = version
+                    self._last_dps.update(dps)
+                    self._last_status_at = time.monotonic()
+                    self._mark_online()
+                    _LOGGER.info(
+                        "Device %s responded with Tuya protocol %s; saving detected version",
+                        self.device_id, version,
+                    )
+                    return self.dps
+
             self._mark_failure(last_err)
             return self.dps
 
@@ -394,6 +433,8 @@ class OmniTuyaDevice:
                 )
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected set_status: {response}")
+                self._last_dps[str(dps_id)] = value
+                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
@@ -425,6 +466,8 @@ class OmniTuyaDevice:
                 )
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected set_value: {response}")
+                self._last_dps[str(dps_id)] = value
+                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
@@ -459,6 +502,9 @@ class OmniTuyaDevice:
                 )
                 if not self._command_accepted(response):
                     raise ConnectionError(f"Tuya rejected multiple values: {response}")
+                for dps_id, value in stringified_dict.items():
+                    self._last_dps[dps_id] = value
+                self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(

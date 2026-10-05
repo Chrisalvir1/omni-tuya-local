@@ -727,6 +727,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         ok = await device.async_set_status(value, dps_id)
         if ok:
+            self._publish_confirmed_state(device_id, device)
             self._schedule_command_verification(device_id, device)
         return ok
 
@@ -737,6 +738,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         ok = await device.async_set_value(dps_id, value)
         if ok:
+            self._publish_confirmed_state(device_id, device)
             self._schedule_command_verification(device_id, device)
         return ok
 
@@ -747,6 +749,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         ok = await device.async_set_values(dps_dict)
         if ok:
+            self._publish_confirmed_state(device_id, device)
             self._schedule_command_verification(device_id, device)
         return ok
 
