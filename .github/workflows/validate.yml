@@ -7,6 +7,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   validate-hassfest:
     name: Validate Hassfest
@@ -14,7 +17,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Hassfest validation
         uses: home-assistant/actions/hassfest@master
 
@@ -24,32 +26,56 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: HACS Action
         uses: hacs/action@main
         with:
           category: integration
 
   unit-tests:
-    name: Run Unit Tests
+    name: Run Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14.2"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install tinytuya==1.20.0
-
-      - name: Run unit tests
+      - name: Compile and run unit tests
         run: |
+          python -m compileall -q custom_components/omni_tuya_local tests
           python -m unittest discover -s tests -v
+
+  home-assistant-core-compatibility:
+    name: Home Assistant Core 2026.10.0 platform compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: home-assistant/core
+          ref: 2026.10.0
+          path: home-assistant-core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.2'
+      - name: Install Home Assistant Core 2026.10.0 test dependencies
+        run: |
+          python -m pip install uv==0.12.19
+          cd home-assistant-core
+          uv pip install --system -r requirements.txt -r requirements_test.txt
+          uv pip install --system -e . --no-deps
+      - name: Install integration runtime dependency
+        run: python -m pip install tinytuya==1.20.0
+      - run: python -m compileall -q custom_components/omni_tuya_local tests_core
+      - run: PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest -q tests_core
+      - run: PYTHONPATH="$GITHUB_WORKSPACE" python -m unittest discover -s tests -v
