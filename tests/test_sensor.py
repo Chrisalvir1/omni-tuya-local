@@ -140,8 +140,11 @@ class TestSensor(unittest.TestCase):
         }
         vac = OmniTuyaVacuum(self.coordinator, config)
 
-        # Verificar que el feature deprecado BATTERY no esté en _attr_supported_features
-        self.assertNotIn(VacuumEntityFeature.BATTERY, vac._attr_supported_features)
+        # Home Assistant 2026.10 removes BATTERY from VacuumEntityFeature. On
+        # older Core versions, verify the deprecated bit is not advertised.
+        battery_feature = getattr(VacuumEntityFeature, "BATTERY", None)
+        if battery_feature is not None:
+            self.assertNotIn(battery_feature, vac._attr_supported_features)
 
         self.coordinator.dps_value.side_effect = lambda dev_id, dps_id: 85 if str(dps_id) == "6" else (250 if str(dps_id) == "19" else None)
         self.assertEqual(vac.current_power_w, 25.0)

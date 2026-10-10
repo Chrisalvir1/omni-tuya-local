@@ -31,8 +31,10 @@ class DummyCoordinatorEntity(DummyEntity):
         self.coordinator = coordinator
 
 for mod_name in [
-    "voluptuous",
     "homeassistant",
+    # Core 2026.10 initializes its probatio-backed voluptuous compatibility
+    # layer during import; load Home Assistant before importing voluptuous.
+    "voluptuous",
     "homeassistant.components",
     "homeassistant.components.alarm_control_panel",
     "homeassistant.components.binary_sensor",

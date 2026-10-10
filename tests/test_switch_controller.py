@@ -157,6 +157,8 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
 
         from homeassistant.helpers import entity_registry as er
         er.async_get = MagicMock(return_value=mock_entity_registry)
+        from homeassistant.helpers import device_registry as dr
+        dr.async_get = MagicMock(return_value=None)
 
         await async_cleanup_device_entities(hass, self.coordinator)
 
@@ -264,6 +266,8 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
 
         from homeassistant.helpers import entity_registry as er
         er.async_get = MagicMock(return_value=mock_entity_registry)
+        from homeassistant.helpers import device_registry as dr
+        dr.async_get = MagicMock(return_value=None)
 
         await async_cleanup_device_entities(hass, self.coordinator)
 
