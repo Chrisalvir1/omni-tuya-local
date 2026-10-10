@@ -1,0 +1,27 @@
+name: Publish Omni Tuya Local release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish GitHub release from the version changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test "$(python -c 'import json; print(json.load(open("custom_components/omni_tuya_local/manifest.json"))["version"])')" = "$VERSION"
+          gh release create "$GITHUB_REF_NAME" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file CHANGELOG.md
