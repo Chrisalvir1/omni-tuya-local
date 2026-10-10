@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 from custom_components.omni_tuya_local.sensor import (
     OmniTuyaSensor,
     _DPS_PROFILES,
+    _is_extended_profile_reported,
+    _is_reported_numeric,
 )
 
 
@@ -29,6 +31,34 @@ class TestSensor(unittest.TestCase):
         # Energy profile
         self.assertIn("17", _DPS_PROFILES)
         self.assertIn("add_ele", _DPS_PROFILES)
+
+    def test_advanced_electrical_profiles_are_explicit_and_multichannel(self):
+        for code in ("reactive_power", "apparent_power", "frequency", "power_factor"):
+            self.assertIn(code, _DPS_PROFILES)
+            self.assertIn(f"{code}_2", _DPS_PROFILES)
+        self.assertFalse(_is_reported_numeric({}, "42"))
+        self.assertFalse(_is_reported_numeric({"42": True}, "42"))
+        self.assertTrue(_is_reported_numeric({"42": 0.97}, "42"))
+        self.assertFalse(_is_extended_profile_reported("reactive_power", {}, "42"))
+        self.assertFalse(_is_extended_profile_reported("reactive_power", {"42": True}, "42"))
+        self.assertTrue(_is_extended_profile_reported("reactive_power", {"42": 0}, "42"))
+        self.assertTrue(_is_extended_profile_reported("power", {}, "42"))
+
+    def test_advanced_energy_scale_uses_reported_tuya_schema(self):
+        config = {
+            "device_id": "meter_1",
+            "name": "Meter",
+            "domain": "sensor",
+            "tuya_functions": [{
+                "dp_id": 42,
+                "code": "reactive_power",
+                "type": "Integer",
+                "values": '{"min":0,"max":100000,"scale":2,"step":1,"type":"Integer"}',
+            }],
+        }
+        sensor = OmniTuyaSensor(self.coordinator, config, "42", {"name": "Reactive", "code": "reactive_power"})
+        self.coordinator.dps_value.return_value = 1234
+        self.assertEqual(sensor.native_value, 12.34)
 
     def test_power_sensor_value_scaling(self):
         config = {

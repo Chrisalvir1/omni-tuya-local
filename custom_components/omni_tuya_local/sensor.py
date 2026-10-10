@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import math
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -14,6 +17,10 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTemperature,
 )
+try:
+    from homeassistant.const import UnitOfApparentPower, UnitOfFrequency, UnitOfReactivePower
+except ImportError:  # Compatibility with older Core releases.
+    UnitOfApparentPower = UnitOfFrequency = UnitOfReactivePower = None
 from homeassistant.core import HomeAssistant
 
 try:
@@ -124,6 +131,74 @@ _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorState
     "battery_percentage": (SensorDeviceClass.BATTERY, PERCENTAGE, SensorStateClass.MEASUREMENT),
 }
 
+_EXTENDED_ELECTRICAL_CODES = {
+    "reactive_power": (
+        getattr(SensorDeviceClass, "REACTIVE_POWER", None),
+        getattr(UnitOfReactivePower, "VOLT_AMPERE_REACTIVE", "var"),
+        SensorStateClass.MEASUREMENT,
+    ),
+    "apparent_power": (
+        getattr(SensorDeviceClass, "APPARENT_POWER", None),
+        getattr(UnitOfApparentPower, "VOLT_AMPERE", "VA"),
+        SensorStateClass.MEASUREMENT,
+    ),
+    "frequency": (
+        getattr(SensorDeviceClass, "FREQUENCY", None),
+        getattr(UnitOfFrequency, "HERTZ", "Hz"),
+        SensorStateClass.MEASUREMENT,
+    ),
+    "power_factor": (
+        getattr(SensorDeviceClass, "POWER_FACTOR", None),
+        None,
+        SensorStateClass.MEASUREMENT,
+    ),
+}
+for _base_code, _profile in tuple(_EXTENDED_ELECTRICAL_CODES.items()):
+    for _channel in range(1, 5):
+        _EXTENDED_ELECTRICAL_CODES[f"{_base_code}_{_channel}"] = _profile
+_DPS_PROFILES.update(_EXTENDED_ELECTRICAL_CODES)
+
+
+def _is_reported_numeric(raw_dps: dict[str, Any], dp_id: str) -> bool:
+    value = raw_dps.get(dp_id)
+    if value is None:
+        value = raw_dps.get(int(dp_id)) if dp_id.isdigit() else None
+    if isinstance(value, bool):
+        return False
+    try:
+        return value is not None and math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_extended_profile_reported(code: str, raw_dps: dict[str, Any], dp_id: str) -> bool:
+    """Only instantiate advanced electrical sensors when live numeric data exists."""
+    normalized = str(code or "").lower()
+    return normalized not in _EXTENDED_ELECTRICAL_CODES or _is_reported_numeric(raw_dps, dp_id)
+
+
+def _reported_scale(config: dict[str, Any], dps_id: str, desc: dict[str, Any]) -> int | None:
+    """Read the decimal exponent only from an explicit DPS descriptor/schema."""
+    scale = desc.get("scale")
+    if scale is None:
+        for function in config.get("tuya_functions") or []:
+            if not isinstance(function, dict) or function_id(function) != str(dps_id):
+                continue
+            values = function.get("values")
+            if isinstance(values, str):
+                try:
+                    values = json.loads(values)
+                except (ValueError, TypeError):
+                    values = None
+            if isinstance(values, dict):
+                scale = values.get("scale")
+            break
+    try:
+        parsed = int(scale)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 0 <= parsed <= 6 else None
+
 
 def _is_energy_capable_device(config: dict[str, Any], raw_dps: dict[str, Any]) -> bool:
     dev_type = str(config.get("device_type") or "").lower()
@@ -214,6 +289,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     "7", "8", "9", "10", "11", "12", "14", "15", "16", "21", "22", "23", "24", "25", "26", "38", "39", "40"
                 }
 
+            raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
+            if not raw_dps and coordinator.devices.get(config.get("device_id")):
+                raw_dps = coordinator.devices[config.get("device_id")].dps
+            if not isinstance(raw_dps, dict):
+                raw_dps = {}
+
             # 1. Procesar sensores definidos en dps_map
             if config.get("domain") == "sensor" and not dps_map and not is_door_window_or_binary:
                 dps_map = {"1": {"name": config.get("name"), "unit": None}}
@@ -224,6 +305,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 dps_id = str(dps_id)
                 if not dps_id.isdigit() or dps_id in excluded_dps:
                     continue
+                descriptor = desc if isinstance(desc, dict) else {}
+                desc_code = str(descriptor.get("code") or "").lower()
+                if not _is_extended_profile_reported(desc_code, raw_dps, dps_id):
+                    continue
                 configured_dps.add(dps_id)
                 uid = f"{DOMAIN}_{config['device_id']}_{dps_id}"
                 if uid not in _known_unique_ids:
@@ -231,17 +316,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     entities.append(
                         OmniTuyaSensor(
                             coordinator, config, dps_id,
-                            desc if isinstance(desc, dict) else {}
+                            descriptor
                         )
                     )
 
             # 2. Extraer sensores de energía y funciones desde Tuya Cloud (tuya_functions)
-            raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
-            if not raw_dps and coordinator.devices.get(config.get("device_id")):
-                raw_dps = coordinator.devices[config.get("device_id")].dps
-            if not isinstance(raw_dps, dict):
-                raw_dps = {}
-
             tuya_functions = config.get("tuya_functions") or []
             for func in tuya_functions:
                 if not isinstance(func, dict):
@@ -251,6 +330,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     continue
                 code = str(func.get("code") or func.get("identifier") or "").lower()
                 func_type = str(func.get("type") or "").lower()
+                if not _is_extended_profile_reported(code, raw_dps, dp_id):
+                    # Cloud schema alone is not evidence of live telemetry.
+                    continue
                 is_sensor_func = (
                     code in _DPS_PROFILES
                     or any(k in code for k in ("power", "voltage", "current", "energy", "temp", "hum", "co2", "pm25", "lux", "battery"))
@@ -513,6 +595,17 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
 
         if value is None:
             return None
+
+        desc_code = str(self._desc.get("code") or "").lower()
+        if desc_code in _EXTENDED_ELECTRICAL_CODES:
+            try:
+                numeric = float(value)
+                scale = _reported_scale(self.config, str(self.dps_id), self._desc)
+                if scale is not None:
+                    numeric /= 10 ** scale
+                return int(numeric) if numeric.is_integer() else numeric
+            except (TypeError, ValueError, OverflowError):
+                return None
 
         # Limpiar strings vacíos o nulos
         if isinstance(value, str):
