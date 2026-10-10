@@ -480,3 +480,8 @@ MIT — úsalo, modifícalo y distribúyelo libremente.
 <p align="center">
   Hecho con ❤️ para <strong>Omni Smart Home</strong> · Innovación Conectada
 </p>
+# Capacidades de esta rama de Fase 2
+
+- Valve nativa: requiere que el dispositivo esté clasificado explícitamente con el dominio `valve` y que el estado DPS sea confirmado por la integración de Tuya o por un mapeo manual `device_class: valve`. No se elige ningún DPS por número.
+- Medición avanzada: potencia reactiva/aparente, frecuencia y factor de potencia se exponen solo cuando la función del producto declara el código correspondiente y el dispositivo entrega un valor numérico. Las escalas se toman del esquema DPS explícito.
+- Validación Core: `.github/workflows/core-valve.yml` comprueba la plataforma Valve contra Home Assistant Core 2026.10.0 y Python 3.14.2.

@@ -53,6 +53,7 @@ for mod_name in [
     "homeassistant.components.switch",
     "homeassistant.components.text",
     "homeassistant.components.vacuum",
+    "homeassistant.components.valve",
     "homeassistant.config_entries",
     "homeassistant.const",
     "homeassistant.core",
@@ -93,10 +94,18 @@ for comp, entity_names in [
     ("cover", ["CoverEntity"]),
     ("lock", ["LockEntity"]),
     ("alarm_control_panel", ["AlarmControlPanelEntity"]),
+    ("valve", ["ValveEntity"]),
 ]:
     m = sys.modules[f"homeassistant.components.{comp}"]
     for attr in entity_names:
         setattr(m, attr, DummyEntity)
+
+valve_mod = sys.modules["homeassistant.components.valve"]
+class ValveEntityFeature:
+    OPEN = 1
+    CLOSE = 2
+
+valve_mod.ValveEntityFeature = ValveEntityFeature
 
 sensor_mod = sys.modules["homeassistant.components.sensor"]
 
