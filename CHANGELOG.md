@@ -1,3 +1,11 @@
+## [1.11.4] - 2026-10-11
+
+- Agregar un comando WebSocket de Home Assistant autenticado y limitado a las entidades de cámara de Omni para asignar una URL RTSP firmada nueva al comenzar cada sesión HAP.
+- Actualizar Matter All-in-One Chrisalvir para solicitar esa URL al iniciar cada sesión Camera.UI/HAP, sin reutilizar deliberadamente la URL Tuya anterior cuando una renovación falla.
+- Evitar enviar el token de acceso de Home Assistant al origen RTSP directo de Tuya; no persistir ni registrar la URL firmada.
+- Tras reiniciar Home Assistant, la siguiente apertura HAP solicita una asignación nueva. El flujo requiere IoT Video Live Stream activo, conectividad con Tuya y el puente HAP actualizado.
+- Añadir pruebas del comando WebSocket y la solicitud de renovación. La disponibilidad del video depende de que Tuya y la red respondan.
+
 ## [1.11.3] - 2026-10-11
 
 - Agregar entidades de cámara para IPC Tuya y comederos de video reconocidos por su categoría/producto.
