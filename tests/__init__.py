@@ -56,6 +56,7 @@ for mod_name in [
     "homeassistant.components.text",
     "homeassistant.components.vacuum",
     "homeassistant.components.valve",
+    "homeassistant.components.websocket_api",
     "homeassistant.config_entries",
     "homeassistant.const",
     "homeassistant.core",
