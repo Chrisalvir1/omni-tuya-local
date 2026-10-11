@@ -23,7 +23,14 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
         device_type = config.get("device_type") or "generic"
         type_meta = DEVICE_TYPES.get(device_type, DEVICE_TYPES["generic"])
 
-        self._attr_device_info = DeviceInfo(
+        self._device_info_config = config
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        config = self.coordinator.get_device_config(self.device_id) or self._device_info_config
+        device_type = config.get("device_type") or "generic"
+        type_meta = DEVICE_TYPES.get(device_type, DEVICE_TYPES["generic"])
+        return DeviceInfo(
             identifiers={(DOMAIN, self.device_id)},
             name=config.get("name") or self.device_id,
             manufacturer="Tuya",

@@ -139,25 +139,44 @@ class TuyaDeviceStore:
         direct_id = str(incoming.get("device_id") or "")
         if direct_id in self._devices:
             return direct_id
+        cloud_id = str(incoming.get("cloud_id") or "")
+        if cloud_id in self._devices:
+            return cloud_id
 
-        def _identities(config: dict) -> set[str]:
-            return {
-                str(value).strip().lower()
-                for value in (
-                    config.get("device_id"), config.get("cloud_id"),
-                    config.get("uuid"), config.get("mac"), config.get("local_key"),
-                )
-                if value and str(value).strip()
-            }
-
-        incoming_ids = _identities(incoming)
-        for stored_id, stored in self._devices.items():
-            if incoming_ids.intersection(_identities(stored)):
+        # A factory reset/account transfer may assign a new cloud ID and local
+        # key to the same physical device. Match by UUID or MAC, in that order;
+        # a local key is a credential and can rotate, so it is not an identity.
+        for identity in ("uuid", "mac"):
+            value = str(incoming.get(identity) or "").strip().lower()
+            if not value:
+                continue
+            if identity == "mac":
+                value = "".join(char for char in value if char in "0123456789abcdef")
+                if len(value) != 12:
+                    continue
+            matches = []
+            for stored_id, stored in self._devices.items():
+                stored_value = str(stored.get(identity) or "").strip().lower()
+                if identity == "mac":
+                    stored_value = "".join(
+                        char for char in stored_value if char in "0123456789abcdef"
+                    )
+                    if len(stored_value) != 12:
+                        continue
+                if value == stored_value:
+                    matches.append(stored_id)
+            if len(matches) == 1:
                 _LOGGER.info(
-                    "Matched Tuya cloud identity %s to stored LAN device %s",
-                    direct_id or "?", stored_id,
+                    "Matched Tuya cloud identity %s by %s to stored device %s",
+                    direct_id or "?", identity, matches[0],
                 )
-                return stored_id
+                return matches[0]
+            if len(matches) > 1:
+                _LOGGER.warning(
+                    "Ambiguous Tuya %s match for cloud device %s; keeping it separate",
+                    identity, direct_id or "?",
+                )
+                return None
         return None
 
     async def remove(self, device_id: str) -> bool:

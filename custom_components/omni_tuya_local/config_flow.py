@@ -279,14 +279,20 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 from .storage import TuyaDeviceStore
                 store = TuyaDeviceStore(self.hass)
                 await store.async_load()
-                await store.add_many(self._cloud_devices)
-                existing_entries = {
-                    entry.data.get(CONF_DEVICE_ID)
+                imported = await store.add_many(self._cloud_devices)
+                entries_by_device_id = {
+                    entry.data.get(CONF_DEVICE_ID): entry
                     for entry in self.hass.config_entries.async_entries(DOMAIN)
                 }
                 added = 0
-                for dev in self._cloud_devices:
-                    if dev["device_id"] not in existing_entries:
+                for dev in imported:
+                    dev_id = dev[CONF_DEVICE_ID]
+                    entry = entries_by_device_id.get(dev_id)
+                    name = dev.get("name") or dev_id
+                    if entry:
+                        if entry.title != name:
+                            self.hass.config_entries.async_update_entry(entry, title=name)
+                    else:
                         added += 1
                         self.hass.async_create_task(
                             self.hass.config_entries.flow.async_init(
@@ -295,11 +301,39 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 data=dev,
                             )
                         )
+                for coordinator in self.hass.data.get(DOMAIN, {}).values():
+                    reload_devices = getattr(coordinator, "async_reload_devices", None)
+                    if reload_devices:
+                        await reload_devices()
                 return self.async_abort(reason="bulk_import_done", description_placeholders={"added": str(added)})
 
-            self._selected_cloud_device = next(
+            selected = next(
                 d for d in self._cloud_devices if d[CONF_DEVICE_ID] == device_id
             )
+            from .storage import TuyaDeviceStore
+            store = TuyaDeviceStore(self.hass)
+            await store.async_load()
+            imported = await store.add_many([selected])
+            if imported:
+                selected = imported[0]
+            existing_entry = next(
+                (
+                    entry
+                    for entry in self.hass.config_entries.async_entries(DOMAIN)
+                    if entry.data.get(CONF_DEVICE_ID) == selected[CONF_DEVICE_ID]
+                ),
+                None,
+            )
+            if existing_entry:
+                name = selected.get("name") or selected[CONF_DEVICE_ID]
+                if existing_entry.title != name:
+                    self.hass.config_entries.async_update_entry(existing_entry, title=name)
+                for coordinator in self.hass.data.get(DOMAIN, {}).values():
+                    reload_devices = getattr(coordinator, "async_reload_devices", None)
+                    if reload_devices:
+                        await reload_devices()
+                return self.async_abort(reason="already_configured")
+            self._selected_cloud_device = selected
             return await self.async_step_search_device()
 
         options = [
