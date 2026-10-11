@@ -1,3 +1,8 @@
+## [1.11.6] - 2026-10-11
+
+- Corregir la captura de imagen de cámaras Tuya para Home Assistant 2026.10: pasar el ancho y alto como argumentos con nombre a FFmpeg, evitando que se interpreten como formato/comando y fallen con `AttributeError: 'int' object has no attribute 'read'`.
+- Agregar una prueba de regresión que verifica la firma actual de FFmpeg y las dimensiones de imagen.
+
 ## [1.11.5] - 2026-10-11
 
 - Mantener disponible la entidad de cámara cuando falla el sondeo Tuya por LAN, siempre que Omni tenga credenciales Cloud configuradas; la asignación RTSP usa Tuya Cloud.
