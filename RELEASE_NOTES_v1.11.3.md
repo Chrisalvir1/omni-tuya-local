@@ -5,9 +5,9 @@ Omni adds video entities for supported Tuya IPC cameras, including compatible vi
 ## Tuya camera video
 
 - Home Assistant gets a native `camera` entity for supported Tuya video products.
-- Each still-image or stream request asks Tuya Cloud for a fresh, temporary RTSP URL.
-- Every new stream session, including a HomeKit session, receives a newly allocated URL. Home Assistant keeps an active stream worker alive, so if Tuya expires its URL during a long session, close/reopen the stream to allocate a current URL. DPS sensors continue independently over LAN.
-- The camera can be exported through HomeKit Bridge in Accessory mode; HomeKit Secure Video is not supported.
+- Still-image requests and creation of a Home Assistant stream worker request a temporary RTSP URL from Tuya Cloud. Signed URLs are never persisted or logged.
+- Camera entities can feed HomeKit Bridge or Matter All-in-One Chrisalvir Camera.UI for HAP. HA reuses a camera stream worker and its original URL; after Tuya expires or changes that URL, reload the Omni config entry to allocate a new one. Automatic cross-session refresh between HA and HAP is not implemented yet.
+- DPS sensors continue to update over LAN, independently of the video stream.
 - DPS status and device commands continue to use Omni's LAN connection. The live video URL comes from Tuya's cloud video service.
 - The Tuya IoT project must have access to **IoT Video Live Stream**, and the device firmware must support stream allocation. Tuya may charge for forwarded RTSP/HLS traffic.
 - Signed stream URLs are not persisted or logged.

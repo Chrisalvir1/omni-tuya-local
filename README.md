@@ -18,7 +18,7 @@
 ## Novedades de la versión 1.11.3
 
 - Añade la plataforma `camera` para cámaras IPC Tuya y comederos con cámara identificados por el esquema del producto.
-- Pide a la API de video de Tuya una URL RTSP temporal y la entrega a Home Assistant Stream para imagen y video en vivo.
+- Pide a la API de video de Tuya una URL RTSP temporal para crear el stream de Home Assistant; no guarda ni registra la URL firmada.
 - El video requiere que las credenciales/API de Tuya tengan acceso al producto **IoT Video Live Stream** y que el firmware del equipo admita streaming por esa API. Tuya puede cobrar el tráfico de video reenviado; verifica las condiciones del proyecto antes de usarlo.
 - Las URL firmadas son temporales y Omni no las guarda ni las escribe en logs. El control y los DPS siguen usando la conexión LAN de Omni.
 
@@ -79,13 +79,15 @@ Al sincronizar desde Tuya Cloud, Omni consulta el esquema de funciones del produ
 - `switch.*_alimentar_ahora`: envía esa cantidad al DP correcto y vuelve a apagarse, apto para HomeKit Bridge.
 - `button.*_limpiar_tolva`: sólo se muestra si el fabricante declaró explícitamente un DP de limpieza/vaciado. No se adivina un DP para evitar cambiar una configuración por error.
 
-El comedero/cámara Tuya puede mostrar video en Omni cuando el producto publica una categoría de cámara compatible y las credenciales Cloud guardadas en Omni tienen permiso para asignar streams. Omni pide una URL RTSP firmada a Tuya cada vez que Home Assistant solicita una fuente de stream o una imagen; al iniciar una sesión nueva —incluidos los inicios de HomeKit— se asigna una URL nueva. Tuya entrega esa URL por su API Cloud de video, no por los DPS LAN. Si el proyecto no tiene habilitado **IoT Video Live Stream**, el firmware no es compatible o la API rechaza el dispositivo, la cámara no podrá entregar video. Tuya indica que el tráfico RTSP/HLS reenviado puede tener costo. Los comandos y estados DPS del comedero se mantienen por LAN.
+El comedero/cámara Tuya puede mostrar video en Omni cuando el producto publica una categoría de cámara compatible y las credenciales Cloud guardadas en Omni tienen permiso para asignar streams. Omni solicita una URL RTSP firmada para crear el stream de Home Assistant y para cada captura; Tuya la entrega por su API Cloud de video, no por los DPS LAN. Home Assistant mantiene un trabajador de video por entidad de cámara y reutiliza su fuente mientras ese trabajador existe. Por eso, si Tuya cambia o vence esa URL, este flujo todavía no la renueva automáticamente dentro del trabajador activo: hay que recargar la entrada de Omni para crear un trabajador con una URL nueva. Tuya requiere **IoT Video Live Stream** y firmware compatible; el tráfico RTSP/HLS reenviado puede tener costo. Los comandos y estados DPS del comedero se mantienen por LAN, independientes del video.
 
-Las URLs RTSP firmadas son temporales. Home Assistant conserva un proceso de stream mientras la sesión está activa; Omni no puede cambiar de forma segura la URL dentro de ese proceso ya iniciado. Si el proveedor vence o cambia la URL durante una sesión larga, cerrar y volver a abrir el stream solicita una URL vigente. Las entidades DPS de movimiento/estado siguen actualizándose por LAN, independientes del video. Para HomeKit, expón `camera.*` mediante HomeKit Bridge en modo **Accessory**; HomeKit Secure Video no está soportado por esta integración.
+Las URLs RTSP firmadas son temporales. El stream de Home Assistant conserva la URL con la que creó su trabajador; cerrar/reabrir solo la sesión de cliente no garantiza que HA asigne otra URL. Recarga la entrada de Omni después de un vencimiento para renovar el origen. Las entidades DPS de movimiento/estado siguen actualizándose por LAN, independientes del video.
+
+Para exponerla por **HAP** con Matter All-in-One Chrisalvir, selecciona `camera.<comedero>` como fuente Home Assistant en Camera.UI y publica esa cámara como accesorio HAP. El add-on pide a HA un endpoint `camera/stream` para la sesión HAP, que puede apuntar al trabajador ya existente de HA; por eso, una renovación transparente de URLs Tuya vencidas requiere coordinar el ciclo del stream de HA y HAP, y aún no está implementada aquí. Este camino es HAP; la compatibilidad Camera/Matter del proyecto Matter All-in-One es independiente.
 
 #### Apple Home, HomeKit Bridge y Matter
 
-Incluye `camera.*` en **HomeKit Bridge** usando el modo **Accessory** para abrir su stream RTSP, además de `switch.*_alimentar_ahora` como interruptor momentáneo: al encenderlo, Omni entrega la cantidad guardada y lo apaga de nuevo. Cada inicio de sesión de cámara vuelve a pedir una URL firmada a Tuya. HomeKit Secure Video no está soportado por esta integración.
+Incluye `camera.*` en **HomeKit Bridge** en modo **Accessory**, o úsala como fuente Camera.UI para el accesorio **HAP** de Matter All-in-One Chrisalvir. Ambos consumen la cámara de Home Assistant. Si la URL Tuya vence dentro del trabajador de HA, recarga la entrada Omni para volver a asignarla. `switch.*_alimentar_ahora` sigue siendo el control momentáneo del comedero.
 
 Apple Home no ofrece un selector numérico nativo para una entidad `number` de Home Assistant. Para elegir porciones desde Apple Home, crea escenas o interruptores auxiliares (por ejemplo, **Dar 1 porción**, **Dar 2 porciones**) que primero ajusten `number.*_porciones_por_comida` y luego activen `switch.*_alimentar_ahora`. Matter no añade un tipo estándar de comedero ni resuelve ese selector; para este caso HomeKit Bridge es la ruta recomendada.
 

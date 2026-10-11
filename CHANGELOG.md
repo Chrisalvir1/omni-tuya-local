@@ -3,9 +3,9 @@
 - Agregar entidades de cámara para IPC Tuya y comederos de video reconocidos por su categoría/producto.
 - Solicitar una URL RTSP temporal a la API oficial de video Tuya y entregarla a la plataforma Camera/Stream de Home Assistant; no guardar ni registrar URLs firmadas.
 - Mantener el control y lectura de DPS por LAN, mientras el video usa el relay Cloud de Tuya. El proyecto Tuya debe tener acceso a IoT Video Live Stream; Tuya puede cobrar el tráfico reenviado.
-- Pedir una asignación RTSP nueva para cada imagen fija o inicio de stream.
-- Aclarar renovación entre sesiones: cada nueva fuente (incluido HomeKit) obtiene URL Tuya nueva; si vence una URL en una sesión activa, debe reabrirse el stream. Los DPS y sensores siguen su ciclo LAN.
-- Documentar exposición de `camera.*` a HomeKit Bridge en modo Accessory y la limitación de HomeKit Secure Video.
+- Pedir una asignación RTSP temporal para capturas y al crear el trabajador de stream de Home Assistant; no registrar ni guardar la URL firmada.
+- Documentar que Home Assistant reutiliza su trabajador de cámara: la URL Tuya aún no se renueva automáticamente al vencer; recargar la entrada de Omni crea un trabajador con una asignación nueva.
+- Documentar el uso como fuente Home Assistant Camera.UI para un accesorio HAP de Matter All-in-One Chrisalvir. La renovación transparente entre los trabajadores HA y HAP queda pendiente.
 - Verificación: cobertura unitaria de asignación RTSP, credenciales ausentes, respuesta inválida y detección del comedero/cámara.
 
 ## [1.11.2] - 2026-10-11
