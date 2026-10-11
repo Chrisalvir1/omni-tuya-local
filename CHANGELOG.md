@@ -1,3 +1,10 @@
+## [1.11.1] - 2026-10-11
+
+- Corregir la sincronización de nombres y metadatos al volver a vincular dispositivos Tuya existentes.
+- Actualizar credenciales y el identificador LAN actual al detectar la misma MAC, conservando la identidad estable del dispositivo y entidades de Home Assistant.
+- Recargar dispositivos y títulos de configuración después de importar o sincronizar cambios desde Smart Life/Tuya Cloud.
+- Añadir pruebas de regresión para renombrado y reemparejamiento por identidad física, sin sustituir el ID estable de Home Assistant.
+
 ## [1.11.0] - 2026-10-11
 
 - Corregir la recuperación de IP que fallaba por constantes no importadas.

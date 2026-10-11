@@ -9,14 +9,15 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-1.11.0-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-1.11.1-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
 
-## Novedades de la versión 1.11.0
+## Novedades de la versión 1.11.1
 
+- Actualiza los nombres y metadatos desde Smart Life/Tuya Cloud al sincronizar y volver a vincular un dispositivo, preservando su identidad estable en Home Assistant cuando coincide su MAC.
 - Añade una entidad `valve` para dispositivos cuya clasificación y DPS de apertura/cierre están confirmados explícitamente.
 - Añade medición eléctrica avanzada por canal para valores informados por el producto: potencia reactiva y aparente, frecuencia y factor de potencia.
 - Las nuevas entidades no inventan DPS ni envían comandos a perfiles desconocidos; el control sigue siendo local.
