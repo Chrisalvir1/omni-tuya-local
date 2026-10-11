@@ -556,30 +556,34 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         await coord.async_reload_devices()
 
     async def diagnostics(call: ServiceCall) -> dict[str, Any]:
-        coord = _coordinator(hass, entry_id)
-        all_devices = coord.store.all()
+        # Services are registered once per integration, but each config entry
+        # may expose only its own device through a scoped store.
+        device_owners: dict[str, OmniTuyaLocalCoordinator] = {}
+        for coordinator in _coordinators(hass):
+            for dev_id in coordinator.store.all():
+                device_owners.setdefault(dev_id, coordinator)
         devices_info = []
-        for dev_id, config in all_devices.items():
-            device = coord.devices.get(dev_id)
+        for dev_id, coordinator in device_owners.items():
+            config = coordinator.store.get(dev_id) or {}
+            device = coordinator.devices.get(dev_id)
             devices_info.append({
                 "device_id": dev_id,
-                "local_key": config.get("local_key"),
                 "name": config.get("name"),
                 "host": config.get("host") or config.get("ip") or "",
                 "version": config.get("version"),
                 "domain": config.get("domain"),
                 "device_type": config.get("device_type"),
                 "product_name": config.get("product_name"),
-                "available": coord.is_available(dev_id),
+                "available": coordinator.is_available(dev_id),
                 "consecutive_failures": device.consecutive_failures if device else 0,
                 "last_error": device.last_error_detail if device else "",
-                "last_dps": coord.dps_value(dev_id) if coord.data else None,
-                "dps_count": len((coord.data or {}).get("dps", {}).get(dev_id, {})),
+                "last_dps": coordinator.dps_value(dev_id) if coordinator.data else None,
+                "dps_count": len((coordinator.data or {}).get("dps", {}).get(dev_id, {})),
             })
         return {
             "version": INTEGRATION_VERSION,
             "build": BUILD_NUMBER,
-            "total_devices": len(all_devices),
+            "total_devices": len(device_owners),
             "available_devices": sum(1 for d in devices_info if d["available"]),
             "devices": devices_info,
         }

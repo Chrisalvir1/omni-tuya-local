@@ -57,8 +57,8 @@ class TestUtil(unittest.TestCase):
         self.assertEqual(max_gangs_for_device({"product_name": "WS-102"}), 2)
         self.assertEqual(max_gangs_for_device({"product_name": "4CH Smart Relay"}), 4)
 
-        # Default fallback
-        self.assertEqual(max_gangs_for_device({}), 8)
+        # Unknown device types default conservatively to one channel.
+        self.assertEqual(max_gangs_for_device({}), 1)
 
 
 if __name__ == "__main__":

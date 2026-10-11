@@ -79,8 +79,8 @@ def _sync_result_message(result: dict[str, Any] | None) -> str:
         "Las nuevas entradas se están agregando y las entidades se recargaron."
     )
 
-PROTOCOL_VERSIONS = ["auto", "3.1", "3.3", "3.4", "3.5"]
-PROTOCOL_VERSIONS_NO_AUTO = ["3.1", "3.3", "3.4", "3.5"]
+PROTOCOL_VERSIONS = ["auto", "3.1", "3.2", "3.3", "3.4", "3.5"]
+PROTOCOL_VERSIONS_NO_AUTO = ["3.1", "3.2", "3.3", "3.4", "3.5"]
 
 DOMAIN_LABELS = {
     "switch": "Interruptor / toma",
@@ -880,7 +880,7 @@ def _find_tuya_device(device_id: str) -> dict[str, Any]:
 
 
 async def _async_test_any_protocol(hass, config: dict[str, Any]) -> tuple[bool, str]:
-    for protocol in ("3.5", "3.4", "3.3", "3.1"):
+    for protocol in ("3.5", "3.4", "3.3", "3.2", "3.1"):
         if await _async_test_tuya_connection(hass, config, protocol):
             return True, protocol
     return False, DEFAULT_VERSION

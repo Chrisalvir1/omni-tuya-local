@@ -1,9 +1,22 @@
-## [1.11.1] - 2026-10-11
+## [1.11.3] - 2026-10-11
 
-- Corregir la sincronización de nombres y metadatos al volver a vincular dispositivos Tuya existentes.
-- Actualizar credenciales y el identificador LAN actual al detectar la misma MAC, conservando la identidad estable del dispositivo y entidades de Home Assistant.
-- Recargar dispositivos y títulos de configuración después de importar o sincronizar cambios desde Smart Life/Tuya Cloud.
-- Añadir pruebas de regresión para renombrado y reemparejamiento por identidad física, sin sustituir el ID estable de Home Assistant.
+- Agregar entidades de cámara para IPC Tuya y comederos de video reconocidos por su categoría/producto.
+- Solicitar una URL RTSP temporal a la API oficial de video Tuya y entregarla a la plataforma Camera/Stream de Home Assistant; no guardar ni registrar URLs firmadas.
+- Mantener el control y lectura de DPS por LAN, mientras el video usa el relay Cloud de Tuya. El proyecto Tuya debe tener acceso a IoT Video Live Stream; Tuya puede cobrar el tráfico reenviado.
+- Pedir una asignación RTSP nueva para cada imagen fija o inicio de stream.
+- Aclarar renovación entre sesiones: cada nueva fuente (incluido HomeKit) obtiene URL Tuya nueva; si vence una URL en una sesión activa, debe reabrirse el stream. Los DPS y sensores siguen su ciclo LAN.
+- Documentar exposición de `camera.*` a HomeKit Bridge en modo Accessory y la limitación de HomeKit Secure Video.
+- Verificación: cobertura unitaria de asignación RTSP, credenciales ausentes, respuesta inválida y detección del comedero/cámara.
+
+## [1.11.2] - 2026-10-11
+
+- Dejar de convertir códigos de estado de Tuya Cloud en números DPS LAN sin un `dp_id` confirmado por el producto.
+- Crear sensores a partir de DPS observados localmente y dejar como desconocido el estado que no tiene lectura LAN; retirar estados de puerta/batería inventados y valores transferidos desde entidades ajenas de Home Assistant.
+- Evitar etiquetas especulativas para DPS de contactos, canales switch por defecto y cantidad de canales supuestos en dispositivos desconocidos.
+- Corregir `diagnostics`: agrega dispositivos de todas las entradas y no devuelve claves locales.
+- Agregar soporte explícito de selección y detección LAN para protocolo 3.2 de TinyTuya.
+- Mantener el descubrimiento de DPS desde respuestas LAN y usar esquema de producto Tuya para nombres/funciones solo cuando ofrece el ID DP numérico.
+- Validación local: 81 pruebas unitarias, compilación Python y `git diff --check` correctos.
 
 ## [1.11.0] - 2026-10-11
 

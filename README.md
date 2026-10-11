@@ -9,18 +9,26 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-1.11.1-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-1.11.3-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
 
-## Novedades de la versión 1.11.1
+## Novedades de la versión 1.11.3
 
-- Actualiza los nombres y metadatos desde Smart Life/Tuya Cloud al sincronizar y volver a vincular un dispositivo, preservando su identidad estable en Home Assistant cuando coincide su MAC.
-- Añade una entidad `valve` para dispositivos cuya clasificación y DPS de apertura/cierre están confirmados explícitamente.
-- Añade medición eléctrica avanzada por canal para valores informados por el producto: potencia reactiva y aparente, frecuencia y factor de potencia.
-- Las nuevas entidades no inventan DPS ni envían comandos a perfiles desconocidos; el control sigue siendo local.
+- Añade la plataforma `camera` para cámaras IPC Tuya y comederos con cámara identificados por el esquema del producto.
+- Pide a la API de video de Tuya una URL RTSP temporal y la entrega a Home Assistant Stream para imagen y video en vivo.
+- El video requiere que las credenciales/API de Tuya tengan acceso al producto **IoT Video Live Stream** y que el firmware del equipo admita streaming por esa API. Tuya puede cobrar el tráfico de video reenviado; verifica las condiciones del proyecto antes de usarlo.
+- Las URL firmadas son temporales y Omni no las guarda ni las escribe en logs. El control y los DPS siguen usando la conexión LAN de Omni.
+
+## Novedades de la versión 1.11.2
+
+- Separa los códigos de estado de Tuya Cloud de los DPS numéricos LAN. Una función cloud solo se asocia a un DPS cuando el producto informa su ID numérico.
+- Crea entidades de telemetría cuando existe una lectura LAN real o un esquema numérico confiable; deja los valores no observados como desconocidos, sin fabricar estados de puerta o batería.
+- Corrige el diagnóstico para incluir los dispositivos de todas las entradas y excluir claves locales.
+- Añade la selección y prueba automática del protocolo Tuya LAN 3.2, además de 3.1, 3.3, 3.4 y 3.5.
+- Reduce entidades/canales especulativos de dispositivos sin esquema verificado.
 
 ---
 
@@ -30,7 +38,7 @@
 
 Los comandos de encendido, apagado y control se envían directamente por TCP al dispositivo en la red local; no pasan por Tuya Cloud. La nube solo se consulta cuando solicitas importar o sincronizar la ficha del dispositivo (ID, local key, nombre, producto y DPS). No hay sincronización periódica. Los estados y la lectura de DPS operativos también se consultan localmente.
 
-Al recibir el primer estado LAN de cada dispositivo, Omni detecta y guarda sus DPS reales. Los DPS numéricos o de texto no reconocidos aparecen como sensores de solo lectura y los booleanos como sensores binarios; si la nube entrega el esquema del producto, se usan sus nombres. Omni no convierte un DPS desconocido en control para no enviar comandos inseguros.
+Al recibir un estado LAN, Omni guarda los DPS numéricos que el dispositivo realmente reporta. El esquema de producto de Tuya puede aportar nombres, tipos e IDs numéricos cuando la API los incluye. Los códigos cloud por sí solos no prueban qué número de DPS usa el dispositivo en LAN. Si falta una lectura o un ID de producto verificable, Omni conserva el valor como desconocido y no inventa sensores, estados ni controles.
 
 ```
 App / HA  ──────►  Omni Tuya Local  ──────►  Dispositivo Tuya
@@ -47,6 +55,7 @@ App / HA  ──────►  Omni Tuya Local  ──────►  Disposi
 
 | Plataforma | Entidades creadas | Descripción |
 |---|---|---|
+| `camera` | `camera.nombre` | Cámaras IPC y comederos Tuya con video; stream RTSP temporal vía Tuya Cloud |
 | `switch` | `switch.nombre` | Enchufes, interruptores, relés |
 | `light` | `light.nombre` | Focos, tiras LED, lámparas |
 | `cover` | `cover.nombre` | Persianas, cortinas motorizadas |
@@ -70,11 +79,13 @@ Al sincronizar desde Tuya Cloud, Omni consulta el esquema de funciones del produ
 - `switch.*_alimentar_ahora`: envía esa cantidad al DP correcto y vuelve a apagarse, apto para HomeKit Bridge.
 - `button.*_limpiar_tolva`: sólo se muestra si el fabricante declaró explícitamente un DP de limpieza/vaciado. No se adivina un DP para evitar cambiar una configuración por error.
 
-La cámara IPC de Tuya no expone su vídeo LAN a través del protocolo DPS/TinyTuya. Para agregar vídeo en Home Assistant se requiere una URL RTSP/ONVIF que el modelo publique o una integración de cámara que soporte el servicio P2P del fabricante; Omni no inventa una entidad de cámara sin una fuente de stream verificable.
+El comedero/cámara Tuya puede mostrar video en Omni cuando el producto publica una categoría de cámara compatible y las credenciales Cloud guardadas en Omni tienen permiso para asignar streams. Omni pide una URL RTSP firmada a Tuya cada vez que Home Assistant solicita una fuente de stream o una imagen; al iniciar una sesión nueva —incluidos los inicios de HomeKit— se asigna una URL nueva. Tuya entrega esa URL por su API Cloud de video, no por los DPS LAN. Si el proyecto no tiene habilitado **IoT Video Live Stream**, el firmware no es compatible o la API rechaza el dispositivo, la cámara no podrá entregar video. Tuya indica que el tráfico RTSP/HLS reenviado puede tener costo. Los comandos y estados DPS del comedero se mantienen por LAN.
+
+Las URLs RTSP firmadas son temporales. Home Assistant conserva un proceso de stream mientras la sesión está activa; Omni no puede cambiar de forma segura la URL dentro de ese proceso ya iniciado. Si el proveedor vence o cambia la URL durante una sesión larga, cerrar y volver a abrir el stream solicita una URL vigente. Las entidades DPS de movimiento/estado siguen actualizándose por LAN, independientes del video. Para HomeKit, expón `camera.*` mediante HomeKit Bridge en modo **Accessory**; HomeKit Secure Video no está soportado por esta integración.
 
 #### Apple Home, HomeKit Bridge y Matter
 
-Incluye únicamente `switch.*_alimentar_ahora` en **HomeKit Bridge**. Apple Home lo presenta como un interruptor momentáneo: al encenderlo, Omni entrega la cantidad guardada y lo apaga de nuevo.
+Incluye `camera.*` en **HomeKit Bridge** usando el modo **Accessory** para abrir su stream RTSP, además de `switch.*_alimentar_ahora` como interruptor momentáneo: al encenderlo, Omni entrega la cantidad guardada y lo apaga de nuevo. Cada inicio de sesión de cámara vuelve a pedir una URL firmada a Tuya. HomeKit Secure Video no está soportado por esta integración.
 
 Apple Home no ofrece un selector numérico nativo para una entidad `number` de Home Assistant. Para elegir porciones desde Apple Home, crea escenas o interruptores auxiliares (por ejemplo, **Dar 1 porción**, **Dar 2 porciones**) que primero ajusten `number.*_porciones_por_comida` y luego activen `switch.*_alimentar_ahora`. Matter no añade un tipo estándar de comedero ni resuelve ese selector; para este caso HomeKit Bridge es la ruta recomendada.
 

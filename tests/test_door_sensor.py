@@ -48,12 +48,27 @@ class TestDoorSensor(unittest.TestCase):
         self.assertEqual(sanitized["device_type"], "door_sensor")
         self.assertEqual(sanitized["category"], "mcs")
 
+    def test_sanitize_door_does_not_invent_dps_or_values(self):
+        cfg = {
+            "device_id": "door-1",
+            "name": "SENSOR PUERTA",
+            "domain": "generic",
+            "device_type": "generic",
+            "category": "mcs",
+            "initial_dps": {"code:battery_percentage": 75},
+            "raw": {"status": [{"code": "battery_percentage", "value": 75}]},
+        }
+        sanitized, changed = sanitize_device_config(cfg)
+        self.assertTrue(changed)
+        self.assertEqual(sanitized["initial_dps"], {"code:battery_percentage": 75})
+        self.assertNotIn("discovered_dps", sanitized)
+
     def test_binary_sensor_states(self):
         coordinator = MagicMock()
         coordinator.is_available.return_value = True
 
         cfg = {
-            "device_id": "bf3f78b02e35c47c84ozjm",
+            "device_id": "door-test-id",
             "name": "SENSOR PUERTA DE OFICINA",
             "product_name": "WiFi门磁",
             "domain": "binary_sensor",
@@ -92,7 +107,8 @@ class TestDoorSensor(unittest.TestCase):
             "domain": "binary_sensor",
             "device_type": "door_sensor",
             "category": "mcs",
-            "initial_dps": {"1": False, "2": 18, "4": False, "battery_percentage": 18},
+            "initial_dps": {"code:battery_percentage": 18},
+            "is_door_window_sensor": True,
         }
 
         # 1. Batería (DP 2)
@@ -100,7 +116,7 @@ class TestDoorSensor(unittest.TestCase):
         bat_sensor = OmniTuyaSensor(coordinator, cfg, "2", {"code": "battery_percentage"})
         self.assertEqual(bat_sensor.name, "Batería")
         self.assertEqual(bat_sensor.device_class, SensorDeviceClass.BATTERY)
-        self.assertEqual(bat_sensor.native_value, 18)
+        self.assertIsNone(bat_sensor.native_value)
 
         # Coordinator receives live push update
         coordinator.dps_value.side_effect = lambda dev_id, dps: 85 if dps == "2" else None
@@ -111,7 +127,7 @@ class TestDoorSensor(unittest.TestCase):
         coordinator.dps_value.return_value = None
         tamper_sensor = OmniTuyaDiscoveredBinarySensor(coordinator, cfg, "4", "Antisabotaje")
         self.assertEqual(tamper_sensor.device_class, BinarySensorDeviceClass.TAMPER)
-        self.assertFalse(tamper_sensor.is_on)
+        self.assertIsNone(tamper_sensor.is_on)
 
 
 if __name__ == "__main__":

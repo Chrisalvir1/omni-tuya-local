@@ -209,7 +209,7 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
     3. tuya_functions (esquema Tuya Cloud con funciones booleanas de tipo switch)
     4. discovered_dps persistido en config
     5. raw_dps recibidos en vivo del coordinador
-    6. Fallback al canal 1
+    6. Fallback al canal 1 únicamente para categorías de switch conocidas
     """
     device_type = config.get("device_type") or "generic"
 
@@ -280,7 +280,20 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
                 channels_dict[str(dps_id)] = None
 
     # 6. Fallback al canal 1 si no se detectó nada
-    if not channels_dict:
+    known_switch = (
+        config.get("domain") in ("switch", "light")
+        or device_type in ("switch", "outlet", "power_strip", "light")
+        or str(config.get("category") or "").lower() in ("cz", "kg", "pc", "sp", "tgkg", "tgq")
+    )
+    product_switch_ids = {
+        function_id(func)
+        for func in tuya_functions
+        if isinstance(func, dict)
+        and str(func.get("code") or func.get("identifier") or "").lower() in {"switch", "switch_1", "power", "power_1", "outlet", "outlet_1"}
+        and str(function_id(func)).isdigit()
+        and function_id(func)
+    }
+    if not channels_dict and known_switch and ("1" in raw_dps or "1" in disc_dps or "1" in product_switch_ids or 1 in raw_dps):
         channels_dict["1"] = None
 
     sorted_channels = sorted(channels_dict.items(), key=lambda item: int(item[0]))

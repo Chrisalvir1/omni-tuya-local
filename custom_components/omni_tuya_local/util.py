@@ -74,10 +74,11 @@ def max_gangs_for_device(config: dict, raw_dps: dict | None = None) -> int:
     if any(w in text for w in ("simple", "single", "1 gang", "1-gang", "1gang", "1 canal", "1 vías", "1 vias", "1 boton", "1 botones", "1 button", "1-button", "1 relay", "1-relay", "unipolar")):
         return 1
 
-    # 3. Detección por canales booleanos contiguos en LAN (1..N)
+    # 3. Detección por canales booleanos del esquema LAN persistido (1..N)
     disc_dps = config.get("discovered_dps") or {}
-    init_dps = config.get("initial_dps") or {}
-    dps_pool = {**init_dps, **disc_dps}
+    # Cloud status codes are not confirmed local DPS identifiers. Gang count
+    # inference must use the product schema or numeric LAN discoveries only.
+    dps_pool = dict(disc_dps)
     if raw_dps and isinstance(raw_dps, dict):
         dps_pool.update(raw_dps)
 
@@ -97,6 +98,6 @@ def max_gangs_for_device(config: dict, raw_dps: dict | None = None) -> int:
     if contiguous > 0:
         return contiguous
 
-    return 8
+    return 1
 
 

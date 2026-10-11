@@ -107,13 +107,14 @@ class CommandRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await dev.async_set_status(False))
         self.assertTrue(dev.dps["1"])
 
-    async def test_named_state_updates_a_previous_numeric_cache(self):
+    async def test_named_state_does_not_claim_numeric_dps_without_product_mapping(self):
         dev = self.make_device()
         dev._tuya.set_status.return_value = None
         await dev.async_set_status(False)
         dev._tuya.status.return_value = {"dps": {"switch": True}}
         await dev.async_status()
-        self.assertTrue(dev.dps["1"])
+        self.assertFalse(dev.dps["1"])
+        self.assertTrue(dev.dps["switch"])
 
     async def test_protocol_recovery_uses_verified_reads_and_closes_candidate(self):
         dev = self.make_device()
@@ -129,6 +130,19 @@ class CommandRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dev.config.local_key, 'test-key')
         candidate.set_status.assert_not_called()
         candidate.set_value.assert_not_called()
+        candidate.close.assert_called_once()
+
+    async def test_protocol_recovery_includes_tiny_tuya_v32(self):
+        dev = self.make_device()
+        candidate = Mock()
+        candidate.status.return_value = {"dps": {"1": True}}
+
+        def build(version=None):
+            return candidate if version == "3.2" else dev._tuya
+
+        with patch.object(dev, "_build_tuya", side_effect=build):
+            result = await dev._async_probe_protocol_versions()
+        self.assertEqual(result, ("3.2", {"1": True}))
         candidate.close.assert_called_once()
 
     async def test_value_and_multiple_value_rejections_do_not_mutate_state(self):

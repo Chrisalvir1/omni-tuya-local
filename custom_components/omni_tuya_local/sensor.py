@@ -260,6 +260,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 or cat in ("mcs", "cs", "pir", "ywbj", "rqbj", "sjcj")
                 or any(w in text for w in ("puerta", "door", "门磁", "ventana", "window", "apertura", "contact", "contacto", "magnetic"))
             )
+            if is_door_window_or_binary:
+                config = {**config, "is_door_window_sensor": True}
 
             # Un interruptor o apagador de pared físico nunca debe generar entidades de sensores
             is_wall_switch = (
@@ -320,7 +322,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         )
                     )
 
-            # 2. Extraer sensores de energía y funciones desde Tuya Cloud (tuya_functions)
+            # 2. Expose product sensor functions only when their exact numeric
+            # DP has also been observed locally. Cloud schema alone is not a
+            # current sensor reading or proof that the LAN DP is available.
             tuya_functions = config.get("tuya_functions") or []
             for func in tuya_functions:
                 if not isinstance(func, dict):
@@ -330,8 +334,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     continue
                 code = str(func.get("code") or func.get("identifier") or "").lower()
                 func_type = str(func.get("type") or "").lower()
-                if not _is_extended_profile_reported(code, raw_dps, dp_id):
-                    # Cloud schema alone is not evidence of live telemetry.
+                if dp_id not in raw_dps and (not dp_id.isdigit() or int(dp_id) not in raw_dps):
                     continue
                 is_sensor_func = (
                     code in _DPS_PROFILES
@@ -394,27 +397,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                             entities.append(
                                 OmniTuyaSensor(
                                     coordinator, config, vac_dp, {"name": default_name}
-                                )
-                            )
-
-            # 4.1 Sensores estándar para sensor de puerta / ventana / contacto (Batería DP 2)
-            if is_door_window_or_binary or dev_type in ("door_sensor", "window_sensor") or cat in ("mcs", "cs"):
-                for bat_dp, default_name in (("2", "Batería"),):
-                    if bat_dp not in configured_dps:
-                        configured_dps.add(bat_dp)
-                        uid = f"{DOMAIN}_{config['device_id']}_{bat_dp}"
-                        if uid not in _known_unique_ids:
-                            _known_unique_ids.add(uid)
-                            entities.append(
-                                OmniTuyaSensor(
-                                    coordinator, config, bat_dp,
-                                    {
-                                        "name": default_name,
-                                        "code": "battery_percentage",
-                                        "device_class": SensorDeviceClass.BATTERY,
-                                        "unit": PERCENTAGE,
-                                        "state_class": SensorStateClass.MEASUREMENT,
-                                    }
                                 )
                             )
 
@@ -547,9 +529,9 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
     @property
     def native_value(self):
         value = self.dps(self.dps_id)
-        if value is None and self._desc.get("code"):
+        if value is None and self._desc.get("code") and not self._is_contact_device():
             value = self.dps(self._desc["code"])
-        if value is None and str(self.dps_id) in ("2", "6"):
+        if value is None and str(self.dps_id) in ("2", "6") and not self._is_contact_device():
             for fallback_key in ("battery_percentage", "electricity_left", "battery", "va_battery"):
                 value = self.dps(fallback_key)
                 if value is not None:
@@ -563,26 +545,20 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
                         if value is not None:
                             break
         if value is None:
-            # Fallback a initial_dps
-            init_dps = self.config.get("initial_dps") or {}
-            value = init_dps.get(str(self.dps_id))
-            if value is None and self._desc.get("code"):
-                value = init_dps.get(self._desc["code"])
-            if value is None and str(self.dps_id) in ("2", "6"):
-                for fallback_key in ("battery_percentage", "electricity_left", "battery", "va_battery"):
-                    if fallback_key in init_dps:
-                        value = init_dps[fallback_key]
-                        break
+            # Never turn stale cloud cache into a reported LAN DPS value.
+            value = None
 
         if value is None and self._attr_device_class == SensorDeviceClass.BATTERY:
             dev_id = getattr(self, "device_id", "")
-            if hasattr(self, "hass") and self.hass:
-                for candidate in (
-                    f"sensor.{dev_id}_battery",
-                    f"sensor.{dev_id}_bateria",
-                    f"sensor.sensor_puerta_oficina_bateria",
-                    f"sensor.sensor_puerta_de_oficina_bateria",
-                ):
+            if hasattr(self, "hass") and self.hass and not self._is_contact_device():
+                code = str(self._desc.get("code") or "").lower()
+                candidates = [f"sensor.{dev_id}_battery", f"sensor.{dev_id}_bateria"]
+                if code and hasattr(self.hass.states, "async_entity_ids"):
+                    candidates.extend(
+                        entity_id for entity_id in self.hass.states.async_entity_ids("sensor")
+                        if entity_id.endswith(f"_{code}")
+                    )
+                for candidate in candidates:
                     ent = self.hass.states.get(candidate)
                     if ent and ent.state not in ("unknown", "unavailable", "None", ""):
                         try:
@@ -590,9 +566,6 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
                             break
                         except (ValueError, TypeError):
                             pass
-            if value is None and dev_id == "bf3f78b02e35c47c84ozjm":
-                value = 18
-
         if value is None:
             return None
 
@@ -673,3 +646,13 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
                 return None
 
         return value
+
+    def _is_contact_device(self) -> bool:
+        config = self.config
+        text = " ".join(str(config.get(key) or "") for key in ("name", "product_name", "device_type")).lower()
+        return (
+            config.get("domain") == "binary_sensor"
+            or str(config.get("device_type") or "").lower() in {"door_sensor", "window_sensor", "motion_sensor", "water_leak_sensor", "smoke_sensor", "gas_sensor"}
+            or str(config.get("category") or "").lower() in {"mcs", "cs", "pir", "ywbj", "rqbj", "sjcj"}
+            or any(word in text for word in ("puerta", "door", "ventana", "window", "contacto", "contact", "magnetic", "apertura"))
+        )

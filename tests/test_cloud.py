@@ -103,6 +103,35 @@ class TestCloud(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(devices[0]["domain"], "switch")
         self.assertEqual(devices[0]["host"], "192.168.1.101")
 
+    async def test_cloud_status_codes_are_not_fabricated_numeric_lan_dps(self):
+        hass = MagicMock()
+
+        async def fake_executor_job(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        hass.async_add_executor_job = fake_executor_job
+        cloud = MagicMock()
+        cloud.cloudrequest.return_value = {
+            "result": [{
+                "id": "door-1",
+                "name": "Door",
+                "category": "mcs",
+                "status": [{"code": "battery_percentage", "value": 75}],
+            }]
+        }
+        cloud.getfunctions.return_value = {"result": []}
+
+        with patch("tinytuya.Cloud", return_value=cloud):
+            devices = await async_fetch_cloud_devices(
+                hass=hass,
+                api_key="key",
+                api_secret="secret",
+                api_region="eu",
+                device_id="uid",
+            )
+
+        self.assertEqual(devices[0]["initial_dps"], {"code:battery_percentage": 75})
+
     async def test_fetch_cloud_devices_with_multiple_uids(self):
         """Test comma-separated UIDs as used in the UI."""
         hass = MagicMock()

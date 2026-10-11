@@ -378,107 +378,6 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 timedelta(seconds=DEFAULT_DISCOVERY_INTERVAL),
             )
 
-        # Sincronización instantánea con eventos de puerta registrados en Home Assistant
-        if self._state_tracker_unsub is None:
-            from homeassistant.helpers.event import async_track_state_change_event
-            from homeassistant.const import STATE_ON
-
-            candidates = [
-                "binary_sensor.sensor_puerta_oficina_puerta",
-                "binary_sensor.sensor_puerta_de_oficina_puerta",
-                "sensor.sensor_puerta_oficina_bateria",
-                "sensor.sensor_puerta_de_oficina_bateria",
-                "binary_sensor.sensor_puerta_de_bodega_puerta",
-                "binary_sensor.sensor_puerta_bodega_puerta",
-                "sensor.sensor_puerta_de_bodega_bateria",
-                "sensor.sensor_puerta_bodega_bateria",
-            ]
-
-            @callback
-            def _on_door_state_event(event):
-                entity_id = event.data.get("entity_id")
-                new_state = event.data.get("new_state")
-                if not new_state or new_state.state in ("unknown", "unavailable", "None", ""):
-                    return
-
-                e_name = entity_id.lower()
-                for dev_id, cfg in self.store.all().items():
-                    is_door = (
-                        cfg.get("device_type") in ("door_sensor", "window_sensor")
-                        or cfg.get("category") in ("mcs", "cs")
-                        or "puerta" in f"{cfg.get('name', '')} {cfg.get('product_name', '')}".lower()
-                    )
-                    if not is_door:
-                        continue
-
-                    c_name = f"{cfg.get('name', '')} {dev_id}".lower()
-                    if "bodega" in e_name and "bodega" not in c_name:
-                        continue
-                    if "oficina" in e_name and "oficina" not in c_name:
-                        continue
-
-                    if entity_id.startswith("binary_sensor."):
-                        is_open = new_state.state == STATE_ON
-                        dps_update = {"1": is_open, "doorcontact_state": is_open}
-                        dev = self.devices.get(dev_id)
-                        if dev:
-                            dev._last_dps.update(dps_update)
-                        self._handle_push_update(dev_id, dps_update)
-                    elif entity_id.startswith("sensor.") and "bateria" in entity_id:
-                        try:
-                            bat_val = float(new_state.state)
-                            if bat_val > 0:
-                                dps_update = {"2": int(bat_val), "battery_percentage": int(bat_val)}
-                                dev = self.devices.get(dev_id)
-                                if dev:
-                                    dev._last_dps.update(dps_update)
-                                self._handle_push_update(dev_id, dps_update)
-                        except (ValueError, TypeError):
-                            pass
-
-            self._state_tracker_unsub = async_track_state_change_event(
-                self.hass, candidates, _on_door_state_event
-            )
-
-            # Inicializar estados de los sensores si ya están disponibles en Home Assistant
-            for cid in candidates:
-                st = self.hass.states.get(cid)
-                if st and st.state not in ("unknown", "unavailable", "None", ""):
-                    e_name = cid.lower()
-                    for dev_id, cfg in self.store.all().items():
-                        is_door = (
-                            cfg.get("device_type") in ("door_sensor", "window_sensor")
-                            or cfg.get("category") in ("mcs", "cs")
-                            or "puerta" in f"{cfg.get('name', '')} {cfg.get('product_name', '')}".lower()
-                        )
-                        if not is_door:
-                            continue
-
-                        c_name = f"{cfg.get('name', '')} {dev_id}".lower()
-                        if "bodega" in e_name and "bodega" not in c_name:
-                            continue
-                        if "oficina" in e_name and "oficina" not in c_name:
-                            continue
-
-                        if cid.startswith("binary_sensor."):
-                            is_open = st.state == STATE_ON
-                            dps_up = {"1": is_open, "doorcontact_state": is_open}
-                            dev = self.devices.get(dev_id)
-                            if dev:
-                                dev._last_dps.update(dps_up)
-                            self._handle_push_update(dev_id, dps_up)
-                        elif cid.startswith("sensor.") and "bateria" in cid:
-                            try:
-                                bat_val = float(st.state)
-                                if bat_val > 0:
-                                    dps_up = {"2": int(bat_val), "battery_percentage": int(bat_val)}
-                                    dev = self.devices.get(dev_id)
-                                    if dev:
-                                        dev._last_dps.update(dps_up)
-                                    self._handle_push_update(dev_id, dps_up)
-                            except (ValueError, TypeError):
-                                pass
-
     def _handle_discovered_device(
         self, device_id: str, ip: str, version: str, dps: dict[str, Any] | None = None
     ) -> None:
@@ -496,21 +395,6 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 None,
             )
         target_ids = [config.get("device_id")] if config else []
-        if device_id in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm"):
-            for did, cfg in self.store.all().items():
-                if did in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm") or (
-                    "puerta" in cfg.get("name", "").lower() and "oficina" in cfg.get("name", "").lower()
-                ):
-                    if did not in target_ids:
-                        target_ids.append(did)
-        elif device_id in ("bfbda98cc2e9d3ad13n21x",):
-            for did, cfg in self.store.all().items():
-                if did in ("bfbda98cc2e9d3ad13n21x",) or (
-                    "puerta" in cfg.get("name", "").lower() and "bodega" in cfg.get("name", "").lower()
-                ):
-                    if did not in target_ids:
-                        target_ids.append(did)
-
         for tid in target_ids:
             cfg = self.store.get(tid)
             if not cfg:
@@ -693,11 +577,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not dev_dps and device_id in self.devices:
             dev_dps = self.devices[device_id].dps
         if not dev_dps or not isinstance(dev_dps, dict):
-            cfg = self.store.get(device_id)
-            if cfg and isinstance(cfg.get("initial_dps"), dict):
-                dev_dps = cfg["initial_dps"]
-            else:
-                return None
+            return None
 
         str_id = str(dps_id)
         if str_id in dev_dps:
@@ -708,22 +588,6 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return dev_dps[int_id]
         except (ValueError, TypeError):
             pass
-
-        _ALIASES = {
-            "1": ("switch_1", "switch", "power_1", "power", "outlet_1", "outlet", "doorcontact_state"),
-            "2": ("switch_2", "power_2", "outlet_2", "battery_percentage", "electricity_left", "battery"),
-            "3": ("switch_3", "power_3", "outlet_3"),
-            "4": ("switch_4", "power_4", "outlet_4", "temper_alarm", "tamper"),
-            "5": ("switch_5", "power_5", "outlet_5"),
-            "6": ("switch_6", "power_6", "outlet_6"),
-            "17": ("add_ele", "energy", "total_forward_energy", "add_ele_1"),
-            "18": ("cur_current", "current", "cur_current_1"),
-            "19": ("cur_power", "power", "cur_power_1"),
-            "20": ("cur_voltage", "voltage"),
-        }
-        for alias in _ALIASES.get(str_id, ()):
-            if alias in dev_dps:
-                return dev_dps[alias]
 
         return None
 
