@@ -11,8 +11,10 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
+from homeassistant.components import websocket_api
+from homeassistant.helpers import entity_registry as er
 
-from .cloud import async_fetch_cloud_devices
+from .cloud import async_allocate_camera_stream, async_fetch_cloud_devices
 from .const import (
     CONF_API_KEY,
     CONF_API_SECRET,
@@ -121,6 +123,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    _async_register_camera_stream_websocket(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_register_services(hass, entry.entry_id)
 
@@ -180,6 +183,73 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if cloud_sync_unsub:
                 cloud_sync_unsub()
     return unload_ok
+
+
+
+async def _async_fresh_camera_url(hass: HomeAssistant, entity_id: str) -> str:
+    """Return a newly allocated URL for an authenticated Omni camera request."""
+    entity_entry = er.async_get(hass).async_get(entity_id)
+    if (
+        entity_entry is None
+        or entity_entry.domain != "camera"
+        or entity_entry.platform != DOMAIN
+    ):
+        raise ValueError("Omni Tuya camera not found")
+
+    prefix = f"{DOMAIN}_"
+    suffix = "_camera"
+    unique_id = entity_entry.unique_id
+    if not unique_id.startswith(prefix) or not unique_id.endswith(suffix):
+        raise ValueError("Omni Tuya camera not found")
+    device_id = unique_id[len(prefix) : -len(suffix)]
+
+    for coordinator in hass.data.get(DOMAIN, {}).values():
+        if not isinstance(coordinator, OmniTuyaLocalCoordinator):
+            continue
+        config = coordinator.get_device_config(device_id)
+        if not config:
+            continue
+        cloud_config = getattr(coordinator.store, "cloud_config", {}) or {}
+        return await async_allocate_camera_stream(
+            hass,
+            cloud_config.get(CONF_API_KEY, ""),
+            cloud_config.get(CONF_API_SECRET, ""),
+            cloud_config.get(CONF_REGION, DEFAULT_REGION),
+            config.get("cloud_id") or device_id,
+        )
+    raise ValueError("Omni Tuya camera not found")
+
+
+def _async_register_camera_stream_websocket(hass: HomeAssistant) -> None:
+    """Register an authenticated bridge endpoint for fresh Tuya URLs."""
+    if hass.data.get(DOMAIN, {}).get("_camera_stream_websocket_registered"):
+        return
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "omni_tuya_local/camera_stream",
+            vol.Required("entity_id"): cv.entity_id,
+        }
+    )
+    @websocket_api.async_response
+    async def handle_camera_stream(connection, msg):
+        """Allocate a one-session RTSP URL without persisting or logging it."""
+        connection.require_admin()
+        try:
+            url = await _async_fresh_camera_url(hass, msg["entity_id"])
+        except ValueError as err:
+            connection.send_error(msg["id"], "not_found", str(err))
+            return
+        except Exception:
+            # Cloud/client errors may contain the signed URL; never echo them.
+            connection.send_error(
+                msg["id"], "unknown_error", "Could not allocate Tuya camera stream"
+            )
+            return
+        connection.send_result(msg["id"], {"url": url})
+
+    websocket_api.async_register_command(hass, handle_camera_stream)
+    hass.data.setdefault(DOMAIN, {})["_camera_stream_websocket_registered"] = True
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> OmniTuyaLocalCoordinator:
