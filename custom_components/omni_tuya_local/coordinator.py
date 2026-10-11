@@ -484,7 +484,18 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Callback para manejar el descubrimiento de un dispositivo."""
         config = self.store.get(device_id)
-        target_ids = [device_id] if config else []
+        if not config:
+            # After a reset/re-pair Tuya can assign a new LAN device ID. Keep
+            # HA's stable inventory key and resolve the broadcast ID to it.
+            config = next(
+                (
+                    item
+                    for item in self.store.all().values()
+                    if device_id in (item.get("lan_device_id"), item.get("cloud_id"))
+                ),
+                None,
+            )
+        target_ids = [config.get("device_id")] if config else []
         if device_id in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm"):
             for did, cfg in self.store.all().items():
                 if did in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm") or (
@@ -530,7 +541,10 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device = self.devices.get(tid)
             if device:
                 # Actualizar inmediatamente la configuración en memoria y resetear cliente
-                if ip and device.config.host != ip:
+                if (
+                    (ip and device.config.host != ip)
+                    or device.config.lan_device_id != (updated.get("lan_device_id") or tid)
+                ):
                     device.update_config(updated)
                     device._invalidate_client()
 

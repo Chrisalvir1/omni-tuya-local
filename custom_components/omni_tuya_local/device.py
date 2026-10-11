@@ -126,6 +126,7 @@ class OmniTuyaDevice:
     def update_config(self, config: dict[str, Any]) -> None:
         """Actualizar configuración del dispositivo (ej: nueva IP, versión, o local key) sin reconstruir."""
         old_host = self.config.host
+        old_lan_device_id = self.config.lan_device_id
         old_version = self.config.version
         old_local_key = self.config.local_key
         old_device_type = self.config.device_type
@@ -134,6 +135,7 @@ class OmniTuyaDevice:
         
         if (
             self.config.host != old_host
+            or self.config.lan_device_id != old_lan_device_id
             or self.config.version != old_version
             or self.config.local_key != old_local_key
         ):
@@ -152,8 +154,9 @@ class OmniTuyaDevice:
             self._detected_protocol_version = None
             self._probed_config_version = ""
             _LOGGER.info(
-                "Device %s config updated (IP: %s → %s, Ver: %s → %s), reconnecting",
-                self.device_id, old_host, self.config.host, old_version, self.config.version,
+                "Device %s config updated (LAN ID: %s → %s, IP: %s → %s, Ver: %s → %s), reconnecting",
+                self.device_id, old_lan_device_id, self.config.lan_device_id,
+                old_host, self.config.host, old_version, self.config.version,
             )
             # The listener owns a separate socket and must rebuild it with the
             # new address/key/version too.  ``receive`` has a five-second
@@ -189,13 +192,13 @@ class OmniTuyaDevice:
             parent.set_socketTimeout(5.0)
             parent.set_socketRetryLimit(3)
             device = tinytuya.Device(
-                dev_id=self.device_id,
+                dev_id=self.config.lan_device_id or self.device_id,
                 cid=self.config.node_id,
                 parent=parent,
             )
         else:
             device = tinytuya.Device(
-                dev_id=self.device_id,
+                dev_id=self.config.lan_device_id or self.device_id,
                 address=self.config.host,
                 local_key=self.config.local_key,
                 version=float(effective_version),

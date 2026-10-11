@@ -1,6 +1,7 @@
 import tests
 import unittest
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.core import HomeAssistant
 from custom_components.omni_tuya_local.cloud import (
@@ -8,9 +9,40 @@ from custom_components.omni_tuya_local.cloud import (
     find_cloud_device_by_mac,
     async_fetch_cloud_devices,
 )
+from custom_components.omni_tuya_local.storage import TuyaDeviceStore
 
 
 class TestCloud(unittest.IsolatedAsyncioTestCase):
+    async def test_relink_updates_name_credentials_and_lan_id_without_losing_ha_identity(self):
+        hass = SimpleNamespace(data={})
+        store = TuyaDeviceStore(hass)
+        store._loaded = True
+        store._store.async_save = AsyncMock()
+        store._devices = {
+            "old-cloud-id": {
+                "device_id": "old-cloud-id",
+                "name": "Nombre anterior",
+                "local_key": "old-key",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "host": "192.168.1.50",
+            }
+        }
+
+        imported = await store.add_many([{
+            "device_id": "new-cloud-id",
+            "name": "Nombre nuevo",
+            "local_key": "new-key",
+            "mac": "aa-bb-cc-dd-ee-ff",
+            "host": "192.168.1.51",
+        }])
+
+        self.assertEqual(len(store.all()), 1)
+        self.assertEqual(imported[0]["device_id"], "old-cloud-id")
+        self.assertEqual(imported[0]["lan_device_id"], "new-cloud-id")
+        self.assertEqual(imported[0]["name"], "Nombre nuevo")
+        self.assertEqual(imported[0]["local_key"], "new-key")
+        self.assertEqual(imported[0]["host"], "192.168.1.50")
+
     def test_normalize_mac(self):
         self.assertEqual(normalize_mac("AA:BB:CC:DD:EE:FF"), "aabbccddeeff")
         self.assertEqual(normalize_mac("aa-bb-cc-dd-ee-ff"), "aabbccddeeff")

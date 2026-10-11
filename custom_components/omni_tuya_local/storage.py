@@ -123,9 +123,14 @@ class TuyaDeviceStore:
                         ):
                             if normalized.get(key) not in (None, "", [], {}):
                                 existing[key] = normalized[key]
+                        # Keep Home Assistant's stable inventory/entity ID,
+                        # while talking to the current Tuya LAN ID after a
+                        # factory reset or transfer to another Smart Life account.
+                        existing["lan_device_id"] = normalized.get("device_id") or existing_id
                         self._devices[existing_id] = existing
                         imported.append(existing)
                     else:
+                        normalized.setdefault("lan_device_id", dev_id)
                         self._devices[dev_id] = normalized
                         imported.append(normalized)
                 except Exception as err:

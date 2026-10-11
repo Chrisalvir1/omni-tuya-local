@@ -25,6 +25,7 @@ class TuyaDeviceConfig:
     device_id: str
     name: str
     local_key: str
+    lan_device_id: str = ""
     cloud_id: str = ""
     uuid: str = ""
     mac: str = ""
@@ -59,6 +60,7 @@ class TuyaDeviceConfig:
     def from_dict(cls, data: dict[str, Any]) -> "TuyaDeviceConfig":
         return cls(
             device_id=str(data.get("device_id") or data.get("id") or ""),
+            lan_device_id=str(data.get("lan_device_id") or data.get("device_id") or data.get("id") or ""),
             name=str(data.get("name") or data.get("device_id") or "Tuya Device"),
             local_key=str(data.get("local_key") or data.get("key") or ""),
             cloud_id=str(data.get("cloud_id") or data.get("id") or ""),
@@ -94,6 +96,7 @@ class TuyaDeviceConfig:
     def as_dict(self) -> dict[str, Any]:
         return {
             "device_id": self.device_id,
+            "lan_device_id": self.lan_device_id or self.device_id,
             "name": self.name,
             "local_key": self.local_key,
             "cloud_id": self.cloud_id,
