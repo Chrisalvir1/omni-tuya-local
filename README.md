@@ -5,17 +5,17 @@
 <h1 align="center">Omni Tuya Local</h1>
 <p align="center">
   Integración HACS para control <strong>local</strong> de dispositivos Tuya en Home Assistant.<br/>
-  Sin nube para el control. Sin latencia. Sin dependencias externas en runtime.
+  Comandos LAN directos. Importación Cloud manual. Sin servidor intermediario de control.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-1.10.0-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-1.11.0-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
 
-## Novedades de la versión 1.10.0
+## Novedades de la versión 1.11.0
 
 - Añade una entidad `valve` para dispositivos cuya clasificación y DPS de apertura/cierre están confirmados explícitamente.
 - Añade medición eléctrica avanzada por canal para valores informados por el producto: potencia reactiva y aparente, frecuencia y factor de potencia.
@@ -27,7 +27,7 @@
 
 **Omni Tuya Local** es una integración nativa de Home Assistant que controla tus dispositivos Tuya **directamente en tu red local**, usando el protocolo propietario de Tuya (vía `tinytuya`).
 
-La nube de Tuya se usa **únicamente** para importar la ficha completa del dispositivo: ID, local key, nombre, producto, categoría, tipo sugerido y metadatos. El control en tiempo real es 100% local.
+Los comandos de encendido, apagado y control se envían directamente por TCP al dispositivo en la red local; no pasan por Tuya Cloud. La nube solo se consulta cuando solicitas importar o sincronizar la ficha del dispositivo (ID, local key, nombre, producto y DPS). No hay sincronización periódica. Los estados y la lectura de DPS operativos también se consultan localmente.
 
 Al recibir el primer estado LAN de cada dispositivo, Omni detecta y guarda sus DPS reales. Los DPS numéricos o de texto no reconocidos aparecen como sensores de solo lectura y los booleanos como sensores binarios; si la nube entrega el esquema del producto, se usan sus nombres. Omni no convierte un DPS desconocido en control para no enviar comandos inseguros.
 
@@ -492,3 +492,9 @@ MIT — úsalo, modifícalo y distribúyelo libremente.
 - Valve nativa: requiere que el dispositivo esté clasificado explícitamente con el dominio `valve` y que el estado DPS sea confirmado por la integración de Tuya o por un mapeo manual `device_class: valve`. No se elige ningún DPS por número.
 - Medición avanzada: potencia reactiva/aparente, frecuencia y factor de potencia se exponen solo cuando la función del producto declara el código correspondiente y el dispositivo entrega un valor numérico. Las escalas se toman del esquema DPS explícito.
 - Validación Core: `.github/workflows/core-valve.yml` comprueba la plataforma Valve contra Home Assistant Core 2026.10.0 y Python 3.14.2.
+
+## Recuperación y errores de control LAN
+
+Las órdenes rechazadas o sin respuesta generan un error en Home Assistant y conservan el último estado conocido. Se programa una lectura posterior para reconciliar el estado; una respuesta aceptada no garantiza la acción física. Las lecturas y escrituras del mismo dispositivo se serializan para evitar conflictos de socket.
+
+Diagnóstico y pruebas: [recuperación de comandos](docs/COMMAND_RECOVERY_2026_10_11.md).

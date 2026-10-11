@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+from functools import wraps
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -16,10 +17,19 @@ _LOGGER = logging.getLogger(__name__)
 # longer than that (and include TinyTuya's socket retry) or HA cancels healthy,
 # but slow, Wi-Fi devices before the LAN request can finish.
 _TUYA_TIMEOUT = 8
-_COMMAND_TIMEOUT = 4
+_COMMAND_TIMEOUT = 8
 _MAX_STATUS_ATTEMPTS = 2
 # A single lost Wi-Fi packet must not flip every entity to unavailable.
 _UNAVAILABLE_AFTER_FAILURES = 3
+
+
+def _serialize_lan_io(method):
+    """Keep executor workers serialized even when their async caller times out."""
+    @wraps(method)
+    def locked(self, *args, **kwargs):
+        with self._io_lock:
+            return method(self, *args, **kwargs)
+    return locked
 
 
 class OmniTuyaDevice:
@@ -50,7 +60,7 @@ class OmniTuyaDevice:
         self._available = True if self.is_sleep_device else False
         self._last_status_at: float = 0.0
         self._lock_obj: asyncio.Lock | None = None
-        self._command_lock_obj: asyncio.Lock | None = None
+        self._io_lock = threading.RLock()
         self._consecutive_failures: int = 0
         self._last_error_detail: str = ""
         self._runtime_version: str | None = None
@@ -97,9 +107,8 @@ class OmniTuyaDevice:
 
     @property
     def _command_lock(self) -> asyncio.Lock:
-        if self._command_lock_obj is None:
-            self._command_lock_obj = asyncio.Lock()
-        return self._command_lock_obj
+        # Polls, diagnostics and writes share both the async and worker locks.
+        return self._lock
 
     @property
     def consecutive_failures(self) -> int:
@@ -117,6 +126,7 @@ class OmniTuyaDevice:
     def update_config(self, config: dict[str, Any]) -> None:
         """Actualizar configuración del dispositivo (ej: nueva IP, versión, o local key) sin reconstruir."""
         old_host = self.config.host
+        old_lan_device_id = self.config.lan_device_id
         old_version = self.config.version
         old_local_key = self.config.local_key
         old_device_type = self.config.device_type
@@ -125,17 +135,28 @@ class OmniTuyaDevice:
         
         if (
             self.config.host != old_host
+            or self.config.lan_device_id != old_lan_device_id
             or self.config.version != old_version
             or self.config.local_key != old_local_key
         ):
             # IP, versión o local key cambió — invalidar cliente para forzar reconexión
+            stale_client = self._tuya
             self._tuya = None
+            if stale_client is not None:
+                async def _close_stale_client() -> None:
+                    def _close() -> None:
+                        with self._io_lock:
+                            stale_client.close()
+                    await self.hass.async_add_executor_job(_close)
+
+                self.hass.async_create_task(_close_stale_client())
             self._runtime_version = None
             self._detected_protocol_version = None
             self._probed_config_version = ""
             _LOGGER.info(
-                "Device %s config updated (IP: %s → %s, Ver: %s → %s), reconnecting",
-                self.device_id, old_host, self.config.host, old_version, self.config.version,
+                "Device %s config updated (LAN ID: %s → %s, IP: %s → %s, Ver: %s → %s), reconnecting",
+                self.device_id, old_lan_device_id, self.config.lan_device_id,
+                old_host, self.config.host, old_version, self.config.version,
             )
             # The listener owns a separate socket and must rebuild it with the
             # new address/key/version too.  ``receive`` has a five-second
@@ -171,13 +192,13 @@ class OmniTuyaDevice:
             parent.set_socketTimeout(5.0)
             parent.set_socketRetryLimit(3)
             device = tinytuya.Device(
-                dev_id=self.device_id,
+                dev_id=self.config.lan_device_id or self.device_id,
                 cid=self.config.node_id,
                 parent=parent,
             )
         else:
             device = tinytuya.Device(
-                dev_id=self.device_id,
+                dev_id=self.config.lan_device_id or self.device_id,
                 address=self.config.host,
                 local_key=self.config.local_key,
                 version=float(effective_version),
@@ -197,6 +218,7 @@ class OmniTuyaDevice:
         """Descartar cliente actual para que se reconstruya en el próximo uso."""
         self._tuya = None
 
+    @_serialize_lan_io
     def _sync_status(self) -> dict[str, Any] | None:
         """Llamada síncrona a tinytuya.status(). Retorna dps o None."""
         device = self._get_or_build_tuya()
@@ -218,11 +240,11 @@ class OmniTuyaDevice:
             if "dps" in raw:
                 self._last_error_detail = ""
                 return dict(raw["dps"])
-            self._last_error_detail = str(raw.get("Payload") or raw.get("Error") or raw)
-            _LOGGER.debug("Tuya device %s status returned no dps: %s", self.device_id, raw)
+            self._last_error_detail = self._response_error(raw)
+            _LOGGER.debug("Tuya device %s status returned no dps: %s", self.device_id, self._last_error_detail)
         else:
-            self._last_error_detail = str(raw)
-            _LOGGER.debug("Tuya device %s status returned empty response: %s", self.device_id, raw)
+            self._last_error_detail = "No usable LAN state response"
+            _LOGGER.debug("Tuya device %s status returned empty response: %s", self.device_id, self._last_error_detail)
         return None
 
     def _mark_online(self) -> None:
@@ -281,7 +303,8 @@ class OmniTuyaDevice:
             self._available = True
             return
 
-        detail = str(reason)
+        detail = str(reason) or "LAN request timed out or returned no response"
+        self._last_error_detail = detail
         self._consecutive_failures += 1
 
         if self._consecutive_failures >= _UNAVAILABLE_AFTER_FAILURES:
@@ -301,43 +324,78 @@ class OmniTuyaDevice:
 
     @staticmethod
     def _command_accepted(response: Any) -> bool:
-        """TinyTuya returns errors as dicts instead of always raising."""
-        return not (
+        """TinyTuya uses None for a valid empty ACK and dicts for LAN errors."""
+        return response is None or (
             isinstance(response, dict)
-            and ("Error" in response or response.get("Err"))
+            and "Error" not in response
+            and not response.get("Err")
         )
 
+    def _merge_dps(self, dps: dict[str, Any]) -> None:
+        """Do not let a cached numeric switch alias mask a fresh named value."""
+        normalized = {str(key): value for key, value in dps.items()}
+        for key in normalized.copy():
+            numeric = "1" if key == "switch" else key.removeprefix("switch_")
+            if (key == "switch" or key.startswith("switch_")) and numeric.isdigit():
+                if numeric not in normalized and numeric in self._last_dps:
+                    normalized[numeric] = normalized[key]
+        self._last_dps.update(normalized)
+
+    def _apply_command_ack(self, response: Any, requested: dict[str, Any]) -> None:
+        # The ACK can report the actual state; it takes precedence over intent.
+        self._last_dps.update(requested)
+        if isinstance(response, dict) and isinstance(response.get("dps"), dict):
+            self._merge_dps(response["dps"])
+
+    @staticmethod
+    def _response_error(response: Any) -> str:
+        code = str(response.get("Err", "unknown")) if isinstance(response, dict) else "unknown"
+        return f"Tuya LAN response failed (code {code if code.isdigit() else 'unknown'})"
+
+    @_serialize_lan_io
     def _sync_set_status(self, value: bool, dps_id: int) -> Any:
         device = self._get_or_build_tuya()
-        try:
-            res = device.set_status(value, dps_id, nowait=False)
-            if self._command_accepted(res):
-                return res
-        except Exception:
-            pass
-        return device.set_value(dps_id, value, nowait=False)
+        # TinyTuya set_status and set_value generate the same CONTROL payload.
+        # Repeating the write cannot repair a key/protocol/network error.
+        return device.set_status(value, dps_id, nowait=False)
 
+    @_serialize_lan_io
     def _sync_set_value(self, dps_id: int, value: Any) -> Any:
         device = self._get_or_build_tuya()
         return device.set_value(dps_id, value, nowait=False)
 
+    @_serialize_lan_io
     def _sync_set_values(self, dps_dict: dict[str, Any]) -> Any:
         device = self._get_or_build_tuya()
         return device.set_multiple_values(dps_dict, nowait=False)
 
-    def _sync_probe_protocol_versions(self) -> tuple[str, dict[str, Any]] | None:
-        """Try alternative Tuya LAN protocol versions safely."""
-        for version in ("3.3", "3.1", "3.4", "3.5"):
+    @_serialize_lan_io
+    def _sync_probe_protocol_version(self, version: str) -> dict[str, Any] | None:
+        """Read a candidate protocol without changing the live client or sending writes."""
+        candidate = self._build_tuya(version)
+        try:
+            raw = candidate.status()
+            if isinstance(raw, dict) and isinstance(raw.get("dps"), dict) and raw["dps"]:
+                return dict(raw["dps"])
+            return None
+        finally:
+            candidate.close()
+
+    async def _async_probe_protocol_versions(self) -> tuple[str, dict[str, Any]] | None:
+        # Give each read its own timeout. One slow protocol must not consume
+        # the budget for the remaining candidates and discard their results.
+        for version in ("3.4", "3.5", "3.3", "3.1"):
             if version == str(self.config.version):
                 continue
             try:
-                candidate = self._build_tuya(version)
-                raw = candidate.status()
-                if isinstance(raw, dict) and isinstance(raw.get("dps"), dict):
-                    self._tuya = candidate
-                    return version, dict(raw["dps"])
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("Protocol %s did not work for %s: %s", version, self.device_id, err)
+                dps = await asyncio.wait_for(
+                    self.hass.async_add_executor_job(self._sync_probe_protocol_version, version),
+                    timeout=25 if self.config.is_sub_device else _TUYA_TIMEOUT,
+                )
+                if dps:
+                    return version, dps
+            except Exception:  # A failed read is not evidence of a compatible protocol.
+                continue
         return None
 
     async def async_status(self) -> dict[str, Any]:
@@ -356,7 +414,7 @@ class OmniTuyaDevice:
                     )
                     if dps is not None:
                         self._mark_online()
-                        self._last_dps.update(dps)
+                        self._merge_dps(dps)
                         self._last_status_at = time.monotonic()
                 except Exception:
                     pass
@@ -368,11 +426,11 @@ class OmniTuyaDevice:
                 try:
                     dps = await asyncio.wait_for(
                         self.hass.async_add_executor_job(self._sync_status),
-                        timeout=_TUYA_TIMEOUT,
+                        timeout=45 if self.config.is_sub_device else _TUYA_TIMEOUT,
                     )
                     if dps is not None:
                         previous_dps = dict(self._last_dps)
-                        self._last_dps.update(dps)
+                        self._merge_dps(dps)
                         self._last_status_at = time.monotonic()
                         self._mark_online()
                         self._notify_polled_alarm_trigger(previous_dps, dps)
@@ -401,18 +459,12 @@ class OmniTuyaDevice:
                 and self._probed_config_version != str(self.config.version)
             ):
                 self._probed_config_version = str(self.config.version)
-                try:
-                    probe = await asyncio.wait_for(
-                        self.hass.async_add_executor_job(self._sync_probe_protocol_versions),
-                        timeout=10,
-                    )
-                except (asyncio.TimeoutError, Exception):
-                    probe = None
+                probe = await self._async_probe_protocol_versions()
                 if probe is not None:
                     version, dps = probe
                     self._runtime_version = version
                     self._detected_protocol_version = version
-                    self._last_dps.update(dps)
+                    self._merge_dps(dps)
                     self._last_status_at = time.monotonic()
                     self._mark_online()
                     _LOGGER.info(
@@ -435,28 +487,18 @@ class OmniTuyaDevice:
                     self.hass.async_add_executor_job(
                         lambda: self._sync_set_status(value, dps_id)
                     ),
-                    timeout=_COMMAND_TIMEOUT,
+                    timeout=25 if self.config.is_sub_device else _COMMAND_TIMEOUT,
                 )
                 if not self._command_accepted(response):
-                    raise ConnectionError(f"Tuya rejected set_status: {response}")
-                self._last_dps[str(dps_id)] = value
-                self._last_dps[f"switch_{dps_id}"] = value
-                if dps_id == 1:
-                    self._last_dps["switch"] = value
+                    raise ConnectionError(self._response_error(response))
+                self._apply_command_ack(response, {str(dps_id): value})
                 self._mark_online()
                 return True
             except asyncio.TimeoutError:
-                _LOGGER.debug(
-                    "Timeout waiting for set_status response from %s dps %s; applying optimistic state",
-                    self.device_id, dps_id
-                )
-                self._last_dps[str(dps_id)] = value
-                self._last_dps[f"switch_{dps_id}"] = value
-                if dps_id == 1:
-                    self._last_dps["switch"] = value
-                self._mark_online()
                 self._invalidate_client()
-                return True
+                self._last_error_detail = "Command response timed out; result unconfirmed"
+                self._mark_failure(self._last_error_detail)
+                return False
             except Exception as err:
                 _LOGGER.error(
                     "Command failed for %s dps %s: %s", self.device_id, dps_id, err
@@ -476,34 +518,17 @@ class OmniTuyaDevice:
                     self.hass.async_add_executor_job(
                         lambda: self._sync_set_value(dps_id, value)
                     ),
-                    timeout=_COMMAND_TIMEOUT,
+                    timeout=25 if self.config.is_sub_device else _COMMAND_TIMEOUT,
                 )
                 if not self._command_accepted(response):
-                    raise ConnectionError(f"Tuya rejected set_value: {response}")
-                self._last_dps[str(dps_id)] = value
-                self._last_dps[f"switch_{dps_id}"] = value
-                if dps_id == 1:
-                    self._last_dps["switch"] = value
+                    raise ConnectionError(self._response_error(response))
+                self._apply_command_ack(response, {str(dps_id): value})
                 self._mark_online()
                 return True
             except asyncio.TimeoutError:
-                _LOGGER.debug(
-                    "Timeout waiting for set_value response from %s dps %s; applying optimistic state",
-                    self.device_id, dps_id
-                )
-                self._last_dps[str(dps_id)] = value
-                self._last_dps[f"switch_{dps_id}"] = value
-                if dps_id == 1:
-                    self._last_dps["switch"] = value
-                self._mark_online()
                 self._invalidate_client()
-                return True
-            except asyncio.TimeoutError:
-                _LOGGER.error(
-                    "Timeout sending value to %s dps %s", self.device_id, dps_id
-                )
-                self._invalidate_client()
-                self._mark_failure("Timeout sending value")
+                self._last_error_detail = "Command response timed out; result unconfirmed"
+                self._mark_failure(self._last_error_detail)
                 return False
             except Exception as err:
                 _LOGGER.error(
@@ -527,24 +552,23 @@ class OmniTuyaDevice:
                     self.hass.async_add_executor_job(
                         lambda: self._sync_set_values(stringified_dict)
                     ),
-                    timeout=_COMMAND_TIMEOUT,
+                    timeout=25 if self.config.is_sub_device else _COMMAND_TIMEOUT,
                 )
                 if not self._command_accepted(response):
-                    raise ConnectionError(f"Tuya rejected multiple values: {response}")
-                for dps_id, value in stringified_dict.items():
-                    self._last_dps[dps_id] = value
+                    raise ConnectionError(self._response_error(response))
+                self._apply_command_ack(response, stringified_dict)
                 self._mark_online()
                 return True
             except asyncio.TimeoutError:
                 _LOGGER.error(
-                    "Timeout sending multiple values to %s: %s", self.device_id, dps_dict
+                    "Timeout sending multiple values to %s", self.device_id
                 )
                 self._invalidate_client()
                 self._mark_failure("Timeout sending multiple values")
                 return False
             except Exception as err:
                 _LOGGER.error(
-                    "Multiple values command failed for %s (%s): %s", self.device_id, dps_dict, err
+                    "Multiple values command failed for %s: %s", self.device_id, err
                 )
                 self._invalidate_client()
                 self._mark_failure(err)
@@ -556,12 +580,12 @@ class OmniTuyaDevice:
             if not self.config.has_host:
                 return {"error": "no_host"}
             try:
-                def _get_raw():
-                    dev = self._get_or_build_tuya()
-                    return dev.status()
+                @_serialize_lan_io
+                def _get_raw(device):
+                    return device._get_or_build_tuya().status()
                 raw = await asyncio.wait_for(
-                    self.hass.async_add_executor_job(_get_raw),
-                    timeout=_TUYA_TIMEOUT,
+                    self.hass.async_add_executor_job(_get_raw, self),
+                    timeout=45 if self.config.is_sub_device else _TUYA_TIMEOUT,
                 )
                 if raw and isinstance(raw, dict):
                     return raw
@@ -571,18 +595,19 @@ class OmniTuyaDevice:
                 self._invalidate_client()
                 return {"error": str(err)}
 
+    @_serialize_lan_io
     def close(self) -> None:
         """Cerrar la conexión socket persistentemente abierta."""
         self._listening = False
         self._push_reconnect_requested.set()
-        for client in (self._tuya, self._push_tuya):
+        for client in (self._tuya,):
             try:
                 if client:
                     client.close()
             except Exception:
                 pass
         self._tuya = None
-        self._push_tuya = None
+        # The push thread closes its own socket in its finally block.
 
     def _start_push_listener(self) -> None:
         if not self._listening:
@@ -594,6 +619,15 @@ class OmniTuyaDevice:
                 name=f"TuyaPush_{self.device_id}"
             ).start()
             _LOGGER.info("Started Tuya TCP Push Listener for %s", self.device_id)
+
+    def _apply_push_dps(self, dps: dict[str, Any]) -> None:
+        if not self._listening:
+            return
+        self._merge_dps(dps)
+        self._mark_online()
+        self._last_status_at = time.monotonic()
+        if self._on_push:
+            self._on_push(self.device_id, dps)
 
     def _push_listener_loop(self) -> None:
         """Hilo dedicado (daemon) para escuchar eventos push TCP en tiempo real."""
@@ -628,16 +662,7 @@ class OmniTuyaDevice:
                         data = listener.receive()
                         if data and isinstance(data, dict) and "dps" in data:
                             dps = data["dps"]
-                            self._last_dps.update(dps)
-                            self._available = True
-                            self._consecutive_failures = 0
-                            
-                            _LOGGER.debug("TCP Push received from %s: %s", self.device_id, dps)
-                            
-                            if self._on_push:
-                                self.hass.loop.call_soon_threadsafe(
-                                    self._on_push, self.device_id, dps
-                                )
+                            self.hass.loop.call_soon_threadsafe(self._apply_push_dps, dps)
                     except Exception as err:
                         if self._listening:
                             _LOGGER.debug("Push listener error for %s: %s", self.device_id, err)

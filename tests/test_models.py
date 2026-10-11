@@ -59,7 +59,25 @@ class TestModels(unittest.TestCase):
 
         as_dict = config.as_dict()
         self.assertEqual(as_dict["device_id"], "test_id_123")
+        self.assertEqual(as_dict["lan_device_id"], "test_id_123")
         self.assertEqual(as_dict["domain"], "switch")
+
+    def test_reset_device_uses_current_lan_id_while_preserving_ha_id(self):
+        from unittest.mock import MagicMock, patch
+        from custom_components.omni_tuya_local.device import OmniTuyaDevice
+
+        config = {
+            "device_id": "stable-ha-id",
+            "lan_device_id": "current-tuya-id",
+            "name": "Renamed plug",
+            "local_key": "current-key",
+            "host": "192.168.1.50",
+        }
+        device = OmniTuyaDevice(MagicMock(), config)
+        with patch("tinytuya.Device") as tuya_device:
+            device._build_tuya()
+        self.assertEqual(device.device_id, "stable-ha-id")
+        self.assertEqual(tuya_device.call_args.kwargs["dev_id"], "current-tuya-id")
 
     def test_normalize_device(self):
         raw = {

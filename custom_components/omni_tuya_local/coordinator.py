@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -13,6 +14,8 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     BACKOFF_POLL_INTERVAL,
+    CONF_DEVICE_ID,
+    CONF_HOST,
     DEFAULT_DISCOVERY_INTERVAL,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
@@ -21,6 +24,7 @@ from .const import (
 from .device import OmniTuyaDevice
 from .dps import schema_from_dps
 from .storage import TuyaDeviceStore
+from .registry import device_for_entry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +51,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             _LOGGER,
             name=DOMAIN,
+            config_entry=entry,
             update_interval=timedelta(seconds=DEFAULT_POLL_INTERVAL),
         )
 
@@ -77,7 +82,9 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif not result and device.is_sleep_device:
                 dps_by_device[device_id] = device.dps
             else:
-                dps_by_device[device_id] = result
+                # Another command may have updated this device while gather
+                # waited for a different device. Publish the current cache.
+                dps_by_device[device_id] = device.dps
 
             # Persist only the shape observed on the LAN, not values.  This
             # lets entities remain visible after a restart even if a device is
@@ -233,7 +240,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 config = sanitized
 
             if not config.get("enabled", True):
-                self.devices.pop(device_id, None)
+                await self._async_discard_device(device_id)
                 continue
             if device_id not in self.devices:
                 self.devices[device_id] = OmniTuyaDevice(
@@ -245,7 +252,12 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Eliminar devices ya no configurados
         for device_id in list(self.devices):
             if device_id not in configured or not configured[device_id].get("enabled", True):
-                self.devices.pop(device_id, None)
+                await self._async_discard_device(device_id)
+
+    async def _async_discard_device(self, device_id: str) -> None:
+        device = self.devices.pop(device_id, None)
+        if device is not None:
+            await self.hass.async_add_executor_job(device.close)
 
     async def async_add_device(self, config: dict[str, Any]) -> dict[str, Any]:
         stored = await self.store.add(config)
@@ -275,7 +287,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return stored
 
     async def async_remove_device(self, device_id: str) -> bool:
-        self.devices.pop(device_id, None)
+        await self._async_discard_device(device_id)
         removed = await self.store.remove(device_id)
         await self.async_request_refresh()
         self._notify_entity_refresh()
@@ -297,24 +309,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Sincronizar el nombre con el Device Registry de HA
             new_name = config.get("name")
             if new_name:
-                device = None
-                if hasattr(device_registry, "async_get_device_by_identifier"):
-                    try:
-                        entry_id = getattr(self, "entry", None) and self.entry.entry_id
-                        if entry_id:
-                            device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id), entry_id)
-                    except Exception:
-                        pass
-                    if not device:
-                        try:
-                            device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id))
-                        except Exception:
-                            pass
-                if not device and hasattr(device_registry, "async_get_device"):
-                    try:
-                        device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
-                    except Exception:
-                        pass
+                device = device_for_entry(device_registry, dev_id, self.entry.entry_id)
                 # Home Assistant renamed ``original_name`` to ``name`` in its
                 # device-registry model.  Keep compatibility with both APIs;
                 # accessing the removed field previously made cloud sync fail
@@ -336,7 +331,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Eliminar los que ya no existen
         for dev_id in list(self.devices):
             if dev_id not in configured:
-                self.devices.pop(dev_id, None)
+                await self._async_discard_device(dev_id)
         # Agregar los nuevos
         for dev_id, config in configured.items():
             if dev_id not in self.devices and config.get("enabled", True):
@@ -489,7 +484,18 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Callback para manejar el descubrimiento de un dispositivo."""
         config = self.store.get(device_id)
-        target_ids = [device_id] if config else []
+        if not config:
+            # After a reset/re-pair Tuya can assign a new LAN device ID. Keep
+            # HA's stable inventory key and resolve the broadcast ID to it.
+            config = next(
+                (
+                    item
+                    for item in self.store.all().values()
+                    if device_id in (item.get("lan_device_id"), item.get("cloud_id"))
+                ),
+                None,
+            )
+        target_ids = [config.get("device_id")] if config else []
         if device_id in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm"):
             for did, cfg in self.store.all().items():
                 if did in ("bf34dcc476d495df94ud9l", "bf3f78b02e35c47c84ozjm") or (
@@ -535,15 +541,19 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device = self.devices.get(tid)
             if device:
                 # Actualizar inmediatamente la configuración en memoria y resetear cliente
-                if ip and device.config.host != ip:
+                if (
+                    (ip and device.config.host != ip)
+                    or device.config.lan_device_id != (updated.get("lan_device_id") or tid)
+                ):
                     device.update_config(updated)
                     device._invalidate_client()
 
-                device._mark_online()
                 if dps and isinstance(dps, dict):
+                    device._mark_online()
                     device._last_dps.update(dps)
                     self._handle_push_update(tid, dps)
                 elif device.is_sleep_device:
+                    device._mark_online()
                     self.hass.async_create_task(self._async_poll_woken_device(tid))
 
             if needs_update:
@@ -591,15 +601,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 from homeassistant.helpers import device_registry as dr
                 dreg = dr.async_get(self.hass)
-                device_entry = None
-                if hasattr(dreg, "async_get_device_by_identifier"):
-                    entry_id = getattr(self, "entry", None) and self.entry.entry_id
-                    if entry_id:
-                        device_entry = dreg.async_get_device_by_identifier((DOMAIN, dev_id), entry_id)
-                    if not device_entry:
-                        device_entry = dreg.async_get_device_by_identifier((DOMAIN, dev_id))
-                if not device_entry and hasattr(dreg, "async_get_device"):
-                    device_entry = dreg.async_get_device(identifiers={(DOMAIN, dev_id)})
+                device_entry = device_for_entry(dreg, dev_id, self.entry.entry_id)
                 if device_entry and device_entry.configuration_url != f"http://{ip}":
                     dreg.async_update_device(device_entry.id, configuration_url=f"http://{ip}")
             except Exception as err:
@@ -608,6 +610,16 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_reload_devices()
 
     async def async_shutdown(self) -> None:
+        await super().async_shutdown()
+        tasks = list(self._verification_tasks.values())
+        if self._recovery_scan_task is not None:
+            tasks.append(self._recovery_scan_task)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._verification_tasks.clear()
+        self._recovery_scan_task = None
         if self._state_tracker_unsub is not None:
             self._state_tracker_unsub()
             self._state_tracker_unsub = None
@@ -636,7 +648,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._udp_transports = []
         for device in self.devices.values():
             try:
-                device.close()
+                await self.hass.async_add_executor_job(device.close)
             except Exception:
                 pass
         self.devices.clear()
@@ -721,8 +733,8 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return True
         return bool((self.data or {}).get("available", {}).get(device_id))
 
-    def _publish_confirmed_state(self, device_id: str, device: OmniTuyaDevice) -> None:
-        """Publish only DPS that have actually been read from the LAN."""
+    def _publish_device_state(self, device_id: str, device: OmniTuyaDevice) -> None:
+        """Publish the cached state after a LAN acknowledgement or fresh read."""
         data = self.data or {"devices": self.store.all(), "dps": {}, "available": {}}
         data.setdefault("dps", {})[device_id] = device.dps
         data.setdefault("available", {})[device_id] = device.available
@@ -743,7 +755,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 await device.async_status()
                 if device.last_status_at > before:
-                    self._publish_confirmed_state(device_id, device)
+                    self._publish_device_state(device_id, device)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("Background command verification failed for %s: %s", device_id, err)
 
@@ -753,10 +765,14 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._ensure_devices()
         device = self.devices.get(device_id)
         if not device:
-            return False
+            raise HomeAssistantError("Tuya device is not configured")
         ok = await device.async_set_status(value, dps_id)
+        if not ok:
+            self._publish_device_state(device_id, device)
+            self._schedule_command_verification(device_id, device)
+            raise HomeAssistantError("Tuya device did not confirm the command; check LAN diagnostics")
         if ok:
-            self._publish_confirmed_state(device_id, device)
+            self._publish_device_state(device_id, device)
             self._schedule_command_verification(device_id, device)
         return ok
 
@@ -764,10 +780,14 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._ensure_devices()
         device = self.devices.get(device_id)
         if not device:
-            return False
+            raise HomeAssistantError("Tuya device is not configured")
         ok = await device.async_set_value(dps_id, value)
+        if not ok:
+            self._publish_device_state(device_id, device)
+            self._schedule_command_verification(device_id, device)
+            raise HomeAssistantError("Tuya device did not confirm the command; check LAN diagnostics")
         if ok:
-            self._publish_confirmed_state(device_id, device)
+            self._publish_device_state(device_id, device)
             self._schedule_command_verification(device_id, device)
         return ok
 
@@ -775,10 +795,14 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._ensure_devices()
         device = self.devices.get(device_id)
         if not device:
-            return False
+            raise HomeAssistantError("Tuya device is not configured")
         ok = await device.async_set_values(dps_dict)
+        if not ok:
+            self._publish_device_state(device_id, device)
+            self._schedule_command_verification(device_id, device)
+            raise HomeAssistantError("Tuya device did not confirm the command; check LAN diagnostics")
         if ok:
-            self._publish_confirmed_state(device_id, device)
+            self._publish_device_state(device_id, device)
             self._schedule_command_verification(device_id, device)
         return ok
 
