@@ -22,15 +22,17 @@ def is_tuya_camera(config: dict) -> bool:
     category = str(config.get("category") or "").lower()
     if category == "dghsxj":
         return True
-    if category != "sp":
+    if category not in ("sp", "cwwsq"):
         return False
+    raw = config.get("raw") if isinstance(config.get("raw"), dict) else {}
     description = " ".join(
-        str(config.get(key) or "")
-        for key in ("name", "product_name", "device_type")
+        str(source.get(key) or "")
+        for source in (config, raw)
+        for key in ("name", "product_name", "device_type", "category_name")
     ).lower()
     return any(
         marker in description
-        for marker in ("camera", "cámara", "camara", "video", "ipc", "feeder", "comedero")
+        for marker in ("camera", "cámara", "camara", "video", "ipc")
     )
 
 
@@ -62,6 +64,17 @@ class OmniTuyaCamera(OmniTuyaEntity, Camera):
         self._attr_unique_id = f"{DOMAIN}_{config['device_id']}_camera"
         self._attr_model = config.get("product_name") or "Tuya IPC"
         Camera.__init__(self)
+
+    @property
+    def available(self) -> bool:
+        """Use cloud readiness for video; LAN DPS polling does not gate RTSP."""
+        cloud_config = getattr(self.coordinator.store, "cloud_config", {}) or {}
+        device_config = self.coordinator.get_device_config(self.device_id) or self.config
+        return bool(
+            cloud_config.get(CONF_API_KEY)
+            and cloud_config.get(CONF_API_SECRET)
+            and (device_config.get("cloud_id") or self.device_id)
+        )
 
     async def stream_source(self) -> str | None:
         """Allocate a new signed Tuya RTSP URL for each stream request."""
