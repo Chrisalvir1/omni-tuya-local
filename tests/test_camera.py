@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import tests
 
-from custom_components.omni_tuya_local.camera import is_tuya_camera
+from custom_components.omni_tuya_local.camera import OmniTuyaCamera, is_tuya_camera
 from custom_components.omni_tuya_local import _async_fresh_camera_url
 from custom_components.omni_tuya_local.const import DOMAIN
 from custom_components.omni_tuya_local.coordinator import OmniTuyaLocalCoordinator
@@ -117,10 +117,33 @@ class TestTuyaCamera(unittest.IsolatedAsyncioTestCase):
             "product_name": "Smart Video Feeder",
         }))
         self.assertTrue(is_tuya_camera({"category": "dghsxj", "name": "IPC"}))
+        self.assertTrue(is_tuya_camera({
+            "category": "cwwsq",
+            "name": "COMEDERO MICHI",
+            "product_name": "Smart Video Feeder",
+        }))
+        self.assertFalse(is_tuya_camera({
+            "category": "cwwsq", "name": "COMEDERO MICHI", "product_name": "Pet Feeder"
+        }))
         self.assertFalse(is_tuya_camera({
             "category": "sp", "name": "Enchufe sala", "product_name": "Smart Plug"
         }))
         self.assertFalse(is_tuya_camera({"category": "cz", "name": "Video Plug"}))
+
+    def test_camera_availability_uses_cloud_credentials_not_lan_poll(self):
+        camera = object.__new__(OmniTuyaCamera)
+        camera.coordinator = SimpleNamespace(
+            store=SimpleNamespace(cloud_config={"api_key": "key", "api_secret": "secret"}),
+            get_device_config=lambda device_id: {"cloud_id": "cloud-device"},
+            is_available=lambda device_id: False,
+        )
+        camera.device_id = "local-device"
+        camera.config = {"device_id": "local-device"}
+
+        self.assertTrue(camera.available)
+
+        camera.coordinator.store.cloud_config["api_secret"] = ""
+        self.assertFalse(camera.available)
 
 
 if __name__ == "__main__":
