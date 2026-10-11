@@ -2,6 +2,7 @@
   "domain": "omni_tuya_local",
   "name": "Omni Tuya Local",
   "after_dependencies": [
+    "ffmpeg",
     "network",
     "stream"
   ],
