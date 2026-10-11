@@ -15,7 +15,8 @@ from custom_components.omni_tuya_local.storage import TuyaDeviceStore
 class TestCloud(unittest.IsolatedAsyncioTestCase):
     async def test_relink_updates_name_credentials_and_lan_id_without_losing_ha_identity(self):
         hass = SimpleNamespace(data={})
-        store = TuyaDeviceStore(hass)
+        with patch("custom_components.omni_tuya_local.storage.Store"):
+            store = TuyaDeviceStore(hass)
         store._loaded = True
         store._store.async_save = AsyncMock()
         store._devices = {
