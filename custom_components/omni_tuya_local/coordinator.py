@@ -240,7 +240,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 config = sanitized
 
             if not config.get("enabled", True):
-                self.devices.pop(device_id, None)
+                await self._async_discard_device(device_id)
                 continue
             if device_id not in self.devices:
                 self.devices[device_id] = OmniTuyaDevice(
@@ -252,7 +252,12 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Eliminar devices ya no configurados
         for device_id in list(self.devices):
             if device_id not in configured or not configured[device_id].get("enabled", True):
-                self.devices.pop(device_id, None)
+                await self._async_discard_device(device_id)
+
+    async def _async_discard_device(self, device_id: str) -> None:
+        device = self.devices.pop(device_id, None)
+        if device is not None:
+            await self.hass.async_add_executor_job(device.close)
 
     async def async_add_device(self, config: dict[str, Any]) -> dict[str, Any]:
         stored = await self.store.add(config)
@@ -282,7 +287,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return stored
 
     async def async_remove_device(self, device_id: str) -> bool:
-        self.devices.pop(device_id, None)
+        await self._async_discard_device(device_id)
         removed = await self.store.remove(device_id)
         await self.async_request_refresh()
         self._notify_entity_refresh()
@@ -326,7 +331,7 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Eliminar los que ya no existen
         for dev_id in list(self.devices):
             if dev_id not in configured:
-                self.devices.pop(dev_id, None)
+                await self._async_discard_device(dev_id)
         # Agregar los nuevos
         for dev_id, config in configured.items():
             if dev_id not in self.devices and config.get("enabled", True):

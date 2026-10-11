@@ -41,6 +41,7 @@ async def async_fetch_cloud_devices(
     api_region: str,
     device_id: str = "",
 ) -> list[dict[str, Any]]:
+    """Fetch discovery metadata and local keys on an explicit user request."""
     api_key = str(api_key or "").strip()
     api_secret = str(api_secret or "").strip()
     api_region = str(api_region or "").strip().lower()

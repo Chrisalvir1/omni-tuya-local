@@ -25,6 +25,14 @@ class CommandRegressions(unittest.IsolatedAsyncioTestCase):
         device._last_dps = {"1": True}
         return device
 
+    async def test_removed_device_closes_lan_listener_and_client(self):
+        close = Mock()
+        hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=lambda fn, *args: fn(*args)))
+        coordinator = SimpleNamespace(hass=hass, devices={"plug-1": SimpleNamespace(close=close)})
+        await OmniTuyaLocalCoordinator._async_discard_device(coordinator, "plug-1")
+        close.assert_called_once_with()
+        self.assertNotIn("plug-1", coordinator.devices)
+
     async def test_rejection_keeps_actual_state_and_never_repeats_payload(self):
         dev = self.make_device()
         client = dev._tuya

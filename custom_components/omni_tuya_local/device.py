@@ -138,7 +138,16 @@ class OmniTuyaDevice:
             or self.config.local_key != old_local_key
         ):
             # IP, versión o local key cambió — invalidar cliente para forzar reconexión
+            stale_client = self._tuya
             self._tuya = None
+            if stale_client is not None:
+                async def _close_stale_client() -> None:
+                    def _close() -> None:
+                        with self._io_lock:
+                            stale_client.close()
+                    await self.hass.async_add_executor_job(_close)
+
+                self.hass.async_create_task(_close_stale_client())
             self._runtime_version = None
             self._detected_protocol_version = None
             self._probed_config_version = ""

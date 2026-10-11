@@ -227,13 +227,6 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                 if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
                     dps = payload["data"]["dps"]
 
-            # Si el broadcast proviene de IPs conocidas de oficina/bodega como fallback
-            if not device_id:
-                if sender_ip == "192.168.110.250":
-                    device_id = "bf34dcc476d495df94ud9l"
-                elif sender_ip in ("192.168.110.36", "192.168.110.251"):
-                    device_id = "bfbda98cc2e9d3ad13n21x"
-
             if device_id and sender_ip:
                 self.callback(device_id, sender_ip, version, dps)
         except Exception as err:

@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.11.0] - 2026-10-11
 
 - Corregir la recuperación de IP que fallaba por constantes no importadas.
 - Serializar lecturas y comandos LAN, incluso cuando un executor continúa después de un timeout.
@@ -7,6 +7,9 @@
 - Recuperar protocolos mediante lecturas independientes y cerrar clientes de prueba.
 - Corregir búsquedas del registro de dispositivos para Core 2026.10 y cancelar tareas al descargar la integración.
 - Añadir pruebas de regresión y de servicios reales con Core 2026.10.0.
+- Mantener la importación manual desde Tuya Cloud, desactivar consultas automáticas cada 60 segundos y documentar que comandos/estados/DPS usan LAN.
+- Cerrar los clientes LAN al retirar dispositivos y eliminar asociaciones de descubrimiento con IPs fijas.
+- Confirmar que TinyTuya 1.20.0 ya es la última versión estable disponible; no se cambia la dependencia runtime.
 
 ## [1.10.0] - 2026-10-10
 

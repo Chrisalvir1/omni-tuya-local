@@ -151,15 +151,15 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 options=[
                     SelectOptionDict(
                         value="cloud_device",
-                        label="Agregar desde Tuya Cloud (recomendado — trae local key automáticamente)",
+                        label="Importar desde Tuya Cloud (solo al solicitarlo)",
                     ),
                     SelectOptionDict(
                         value="sync_cloud",
-                        label="🔄 Sincronizar Tuya Cloud y buscar dispositivos nuevos",
+                        label="🔄 Sincronizar dispositivos ahora",
                     ),
                     SelectOptionDict(
                         value="manual_device",
-                        label="Agregar manualmente (necesitas device_id, local_key e IP)",
+                        label="Agregar dispositivo en la red local (ID, clave local e IP)",
                     ),
                 ],
                 mode=SelectSelectorMode.LIST,
@@ -540,9 +540,9 @@ class OmniTuyaLocalOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_edit_device()
 
         device_options = {
-            "sync_cloud": "🔄 Sincronizar nuevos dispositivos desde la Nube",
-            "update_cloud": "🔑 Actualizar Credenciales de la Nube (API Key / Secret)",
-            "find_cloud_mac": "🔎 Buscar e importar un dispositivo nuevo por MAC",
+            "sync_cloud": "🔄 Sincronizar nuevos dispositivos ahora",
+            "update_cloud": "🔑 Actualizar credenciales de Tuya Cloud",
+            "find_cloud_mac": "🔎 Buscar dispositivo por MAC ahora",
         }
         device_options.update({
             dev_id: "{name}  ·  IP: {ip}  ·  v{ver}".format(

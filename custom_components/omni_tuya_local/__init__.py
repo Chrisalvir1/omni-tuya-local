@@ -11,7 +11,6 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.event import async_track_time_interval
 
 from .cloud import async_fetch_cloud_devices
 from .const import (
@@ -24,7 +23,6 @@ from .const import (
     CONF_REGION,
     CONF_VERSION,
     BUILD_NUMBER,
-    DEFAULT_CLOUD_SYNC_INTERVAL,
     DEFAULT_REGION,
     DEFAULT_VERSION,
     DEVICE_TYPES,
@@ -117,37 +115,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     elif entry.data:
         store.cloud_config.update({k: v for k, v in entry.data.items() if v})
         await store.async_save()
-
-    if (
-        store.cloud_config.get(CONF_API_KEY)
-        and store.cloud_config.get(CONF_API_SECRET)
-    ):
-        if not store.all():
-            try:
-                devices = await async_fetch_cloud_devices(
-                    hass,
-                    store.cloud_config[CONF_API_KEY],
-                    store.cloud_config[CONF_API_SECRET],
-                    store.cloud_config.get(CONF_REGION, DEFAULT_REGION),
-                    store.cloud_config.get(CONF_DEVICE_ID, ""),
-                )
-                await store.add_many(devices)
-                _LOGGER.info("Imported %s Tuya devices during setup", len(devices))
-            except Exception as err:
-                _LOGGER.warning("Tuya cloud sync during setup failed: %s", err)
-        else:
-            hass.data.setdefault(DOMAIN, {})
-            if not hass.data[DOMAIN].get("_cloud_sync_scheduled"):
-                hass.data[DOMAIN]["_cloud_sync_scheduled"] = True
-
-                async def _background_sync() -> None:
-                    await asyncio.sleep(5)
-                    try:
-                        await hass.services.async_call(DOMAIN, SERVICE_SYNC_CLOUD, {})
-                    except Exception as err:
-                        _LOGGER.debug("Background cloud sync failed: %s", err)
-
-                hass.async_create_task(_background_sync())
 
     coordinator = OmniTuyaLocalCoordinator(hass, entry, active_store)
     await coordinator.async_setup()
@@ -513,7 +480,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
         cloud_config = dict(store.cloud_config)
         cloud_config.update({k: v for k, v in call.data.items() if v})
         if not cloud_config.get(CONF_API_KEY) or not cloud_config.get(CONF_API_SECRET):
-            raise ValueError("Tuya API key and API secret are required")
+            raise HomeAssistantError("Tuya API key and API secret are required")
         store.cloud_config.update(cloud_config)
         await store.async_save()
         devices = await async_fetch_cloud_devices(
@@ -582,33 +549,8 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
             ],
         }
 
-    # Refreshing the cloud is only for metadata (new devices, names and local
-    # keys).  Device control remains fully local.  One timer for the whole
-    # integration avoids API bursts caused by having one config entry/device.
-    if (
-        DEFAULT_CLOUD_SYNC_INTERVAL > 0
-        and "_cloud_sync_unsub" not in hass.data[DOMAIN]
-    ):
-        async def _periodic_cloud_sync(_now) -> None:
-            store = TuyaDeviceStore(hass)
-            await store.async_load()
-            if not (
-                store.cloud_config.get(CONF_API_KEY)
-                and store.cloud_config.get(CONF_API_SECRET)
-            ):
-                return
-            try:
-                await hass.services.async_call(
-                    DOMAIN, SERVICE_SYNC_CLOUD, {}, blocking=True
-                )
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.warning("Periodic Tuya cloud sync failed: %s", err)
-
-        hass.data[DOMAIN]["_cloud_sync_unsub"] = async_track_time_interval(
-            hass, _periodic_cloud_sync,
-            timedelta(seconds=DEFAULT_CLOUD_SYNC_INTERVAL),
-        )
-
+    # Cloud inventory sync is exposed as a user-invoked service only.
+    # Commands, polling and DPS reads use the local device transport.
     async def reload_devices(call: ServiceCall) -> None:
         coord = _coordinator(hass, entry_id)
         await coord.async_reload_devices()
