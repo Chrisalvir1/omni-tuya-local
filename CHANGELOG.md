@@ -1,3 +1,9 @@
+## [1.11.5] - 2026-10-11
+
+- Mantener disponible la entidad de cámara cuando falla el sondeo Tuya por LAN, siempre que Omni tenga credenciales Cloud configuradas; la asignación RTSP usa Tuya Cloud.
+- Reconocer comederos con cámara de categoría `cwwsq` solo cuando los metadatos confirman cámara/video, evitando crear cámaras falsas para comederos normales.
+- Agregar pruebas de disponibilidad Cloud y detección de Smart Video Feeder.
+
 ## [1.11.4] - 2026-10-11
 
 - Agregar un comando WebSocket de Home Assistant autenticado y limitado a las entidades de cámara de Omni para asignar una URL RTSP firmada nueva al comenzar cada sesión HAP.
