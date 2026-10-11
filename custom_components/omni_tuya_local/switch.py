@@ -83,7 +83,17 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         value = self.dps(self.dps_id)
         if value is None:
             return None
-        return value is True or value == "on"
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return value == 1
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("on", "true", "1"):
+                return True
+            if normalized in ("off", "false", "0"):
+                return False
+        return None
 
     @property
     def current_power_w(self) -> float | None:

@@ -47,6 +47,7 @@ from .const import (
 from .coordinator import OmniTuyaLocalCoordinator
 from .discovery import async_scan_network
 from .storage import TuyaDeviceStore
+from .registry import device_for_entry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -170,20 +171,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entity_registry.async_remove(old_entity_id)
 
     try:
-        hub_device = None
-        if hasattr(device_registry, "async_get_device_by_identifier"):
-            try:
-                hub_device = device_registry.async_get_device_by_identifier((DOMAIN, "hub"), entry.entry_id)
-            except Exception:
-                try:
-                    hub_device = device_registry.async_get_device_by_identifier((DOMAIN, "hub"))
-                except Exception:
-                    pass
-        if not hub_device and hasattr(device_registry, "async_get_device"):
-            try:
-                hub_device = device_registry.async_get_device(identifiers={(DOMAIN, "hub")})
-            except Exception:
-                pass
+        hub_device = device_for_entry(device_registry, "hub", entry.entry_id)
         if hub_device:
             device_registry.async_remove_device(hub_device.id)
     except Exception as err:
@@ -356,23 +344,9 @@ async def async_cleanup_device_entities(
         # 1. Obtener device de HA si está disponible
         ha_device = None
         if device_registry:
-            if hasattr(device_registry, "async_get_device_by_identifier"):
-                try:
-                    entry_id = getattr(coordinator, "entry", None) and coordinator.entry.entry_id
-                    if entry_id:
-                        ha_device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id), entry_id)
-                except Exception:
-                    pass
-                if not ha_device:
-                    try:
-                        ha_device = device_registry.async_get_device_by_identifier((DOMAIN, dev_id))
-                    except Exception:
-                        pass
-            if not ha_device and hasattr(device_registry, "async_get_device"):
-                try:
-                    ha_device = device_registry.async_get_device(identifiers={(DOMAIN, dev_id)})
-                except Exception:
-                    pass
+            ha_device = device_for_entry(
+                device_registry, dev_id, coordinator.entry.entry_id
+            )
 
         # 2. Recolectar todas las entidades asociadas al dispositivo
         related_entries = []

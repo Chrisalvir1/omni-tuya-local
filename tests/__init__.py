@@ -57,6 +57,7 @@ for mod_name in [
     "homeassistant.config_entries",
     "homeassistant.const",
     "homeassistant.core",
+    "homeassistant.exceptions",
     "homeassistant.helpers",
     "homeassistant.helpers.config_validation",
     "homeassistant.helpers.device_registry",
@@ -76,6 +77,14 @@ for mod_name in [
             __import__(mod_name)
         except ImportError:
             sys.modules[mod_name] = MagicMock()
+
+# Keep imports from mocked parent packages bound to the same child modules.
+for module_name, module in list(sys.modules.items()):
+    if module_name.startswith("homeassistant."):
+        parent_name, _, attribute = module_name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if isinstance(parent, MagicMock):
+            setattr(parent, attribute, module)
 
 # Override base classes to avoid metaclass conflicts
 for comp, entity_names in [
@@ -134,6 +143,26 @@ sensor_mod.SensorStateClass = SensorStateClass
 coord_mod = sys.modules["homeassistant.helpers.update_coordinator"]
 coord_mod.CoordinatorEntity = DummyCoordinatorEntity
 
+# A mocked base class turns coordinator subclasses into mocks as well.
+# Use a minimal class when Core cannot run on the unit-test interpreter.
+if not isinstance(coord_mod.DataUpdateCoordinator, type):
+    class DummyDataUpdateCoordinator:
+        def __class_getitem__(cls, item):
+            return cls
+
+        def __init__(self, hass, logger, **kwargs):
+            self.hass = hass
+            self.config_entry = kwargs.get("config_entry")
+            self.data = None
+
+        def async_set_updated_data(self, data):
+            self.data = data
+
+        async def async_shutdown(self):
+            pass
+
+    coord_mod.DataUpdateCoordinator = DummyDataUpdateCoordinator
+
 entity_mod = sys.modules["homeassistant.helpers.entity"]
 entity_mod.Entity = DummyEntity
 entity_mod.DeviceInfo = dict
@@ -165,3 +194,9 @@ const_mod.UnitOfEnergy = UnitOfEnergy
 const_mod.UnitOfElectricCurrent = UnitOfElectricCurrent
 const_mod.UnitOfElectricPotential = UnitOfElectricPotential
 const_mod.UnitOfTemperature = UnitOfTemperature
+
+# Python-only tests still exercise actual exception propagation.
+if not isinstance(sys.modules["homeassistant.exceptions"].HomeAssistantError, type):
+    class HomeAssistantError(Exception):
+        pass
+    sys.modules["homeassistant.exceptions"].HomeAssistantError = HomeAssistantError
