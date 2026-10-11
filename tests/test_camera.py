@@ -108,7 +108,7 @@ class TestTuyaCamera(unittest.IsolatedAsyncioTestCase):
         hass = MagicMock()
         source = "rtsps://example.invalid/live"
         camera = object.__new__(OmniTuyaCamera)
-        camera._hass = hass
+        camera.hass = hass
         camera.stream_source = AsyncMock(return_value=source)
 
         with patch(
