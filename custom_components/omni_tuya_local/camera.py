@@ -101,4 +101,9 @@ class OmniTuyaCamera(OmniTuyaEntity, Camera):
         source = await self.stream_source()
         if not source:
             return None
-        return await ffmpeg.async_get_image(self.hass, source, width, height)
+        return await ffmpeg.async_get_image(
+            self.hass,
+            source,
+            width=width,
+            height=height,
+        )

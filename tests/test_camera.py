@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import tests
 
@@ -103,6 +103,25 @@ class TestTuyaCamera(unittest.IsolatedAsyncioTestCase):
                     hass, "api-key", "api-secret", "us", "camera-1"
                 )
         self.assertNotIn("secret.invalid", str(caught.exception))
+
+    async def test_camera_image_uses_keyword_dimensions_for_ha_2026_10(self):
+        hass = MagicMock()
+        source = "rtsps://example.invalid/live"
+        camera = object.__new__(OmniTuyaCamera)
+        camera.hass = hass
+        camera.stream_source = AsyncMock(return_value=source)
+
+        with patch(
+            "custom_components.omni_tuya_local.camera.ffmpeg.async_get_image",
+            new_callable=AsyncMock,
+            return_value=b"jpeg",
+        ) as get_image:
+            image = await camera.async_camera_image(width=640, height=480)
+
+        self.assertEqual(image, b"jpeg")
+        get_image.assert_awaited_once_with(
+            hass, source, width=640, height=480
+        )
 
     async def test_requires_cloud_credentials(self):
         with self.assertRaises(TuyaCloudError):
