@@ -15,6 +15,54 @@ class TuyaCloudError(ValueError):
     """An API error safe to show to the Home Assistant administrator."""
 
 
+async def async_allocate_camera_stream(
+    hass: HomeAssistant,
+    api_key: str,
+    api_secret: str,
+    api_region: str,
+    device_id: str,
+) -> str:
+    """Request a short-lived RTSP URL from Tuya's video-stream API.
+
+    The signed URL is a credential: never log or persist it. Tuya may charge
+    for relayed video traffic and the device/project must support this API.
+    """
+    api_key = str(api_key or "").strip()
+    api_secret = str(api_secret or "").strip()
+    api_region = str(api_region or "").strip().lower()
+    device_id = str(device_id or "").strip()
+    if not all((api_key, api_secret, api_region, device_id)):
+        raise TuyaCloudError("Configura las credenciales Tuya Cloud para solicitar el video.")
+
+    def _request() -> str:
+        import tinytuya
+
+        client = tinytuya.Cloud(
+            apiRegion=api_region,
+            apiKey=api_key,
+            apiSecret=api_secret,
+            apiDeviceID=device_id,
+        )
+        response = client.cloudrequest(
+            f"/v1.0/devices/{device_id}/stream/actions/allocate",
+            action="POST",
+            post={"type": "rtsp"},
+        )
+        if not isinstance(response, dict) or not response.get("success"):
+            # Do not include the response body: it can contain signed URLs.
+            code = response.get("code") if isinstance(response, dict) else None
+            if code:
+                raise TuyaCloudError(f"Tuya no asignó el stream RTSP (código {code}).")
+            raise TuyaCloudError("Tuya no asignó el stream RTSP para este dispositivo.")
+        result = response.get("result")
+        url = result.get("url") if isinstance(result, dict) else None
+        if not isinstance(url, str) or not url.lower().startswith(("rtsp://", "rtsps://")):
+            raise TuyaCloudError("Tuya respondió sin una URL RTSP válida.")
+        return url
+
+    return await hass.async_add_executor_job(_request)
+
+
 def normalize_mac(value: Any) -> str:
     """Return a MAC in a comparable form, or an empty string if invalid."""
     compact = "".join(char for char in str(value or "").lower() if char in "0123456789abcdef")
@@ -226,27 +274,10 @@ async def async_fetch_cloud_devices(
                 code = st.get("code")
                 val = st.get("value")
                 if code is not None:
-                    initial_dps[str(code)] = val
-                    if code in ("switch", "switch_1", "power", "power_1", "outlet", "outlet_1", "doorcontact_state"):
-                        initial_dps["1"] = val
-                    elif code in ("switch_2", "power_2", "outlet_2", "battery_percentage", "electricity_left", "battery"):
-                        initial_dps["2"] = val
-                    elif code in ("switch_3", "power_3", "outlet_3"):
-                        initial_dps["3"] = val
-                    elif code in ("switch_4", "power_4", "outlet_4", "temper_alarm", "tamper"):
-                        initial_dps["4"] = val
-                    elif code in ("switch_5", "power_5", "outlet_5"):
-                        initial_dps["5"] = val
-                    elif code in ("switch_6", "power_6", "outlet_6"):
-                        initial_dps["6"] = val
-                    elif code in ("cur_power", "cur_power_1"):
-                        initial_dps["19"] = val
-                    elif code in ("cur_voltage", "voltage"):
-                        initial_dps["20"] = val
-                    elif code in ("cur_current", "cur_current_1"):
-                        initial_dps["18"] = val
-                    elif code in ("add_ele", "add_ele_1"):
-                        initial_dps["17"] = val
+                    # Tuya cloud status codes (e.g. "switch_1") are not
+                    # numeric LAN DPS IDs. Keep them namespaced as codes until
+                    # an authoritative product function schema maps them.
+                    initial_dps[f"code:{code}"] = val
 
         formatted.append({
             "device_id": raw.get("id"),

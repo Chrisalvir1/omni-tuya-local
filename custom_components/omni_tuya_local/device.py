@@ -41,13 +41,9 @@ class OmniTuyaDevice:
     ) -> None:
         self.hass = hass
         self.config = TuyaDeviceConfig.from_dict(config)
-        self._last_dps: dict[str, Any] = dict(config.get("initial_dps") or {})
-        # Cloud status is a fallback only for sleeping battery sensors that
-        # cannot expose their event DPS over the local Tuya protocol.  Never
-        # overwrite a regular LAN device with a delayed cloud value.
-        cloud_dps = config.get("initial_dps")
-        if self.is_sleep_device and isinstance(cloud_dps, dict) and cloud_dps:
-            self._last_dps.update(cloud_dps)
+        # Only a real LAN status() response populates runtime DPS. Cloud
+        # function/status codes have a different identity space.
+        self._last_dps: dict[str, Any] = {}
         self.device_id = self.config.device_id
         self._on_push = on_push
         # The regular status polling client must never be shared with the
@@ -334,11 +330,6 @@ class OmniTuyaDevice:
     def _merge_dps(self, dps: dict[str, Any]) -> None:
         """Do not let a cached numeric switch alias mask a fresh named value."""
         normalized = {str(key): value for key, value in dps.items()}
-        for key in normalized.copy():
-            numeric = "1" if key == "switch" else key.removeprefix("switch_")
-            if (key == "switch" or key.startswith("switch_")) and numeric.isdigit():
-                if numeric not in normalized and numeric in self._last_dps:
-                    normalized[numeric] = normalized[key]
         self._last_dps.update(normalized)
 
     def _apply_command_ack(self, response: Any, requested: dict[str, Any]) -> None:
@@ -384,7 +375,7 @@ class OmniTuyaDevice:
     async def _async_probe_protocol_versions(self) -> tuple[str, dict[str, Any]] | None:
         # Give each read its own timeout. One slow protocol must not consume
         # the budget for the remaining candidates and discard their results.
-        for version in ("3.4", "3.5", "3.3", "3.1"):
+        for version in ("3.4", "3.5", "3.3", "3.2", "3.1"):
             if version == str(self.config.version):
                 continue
             try:

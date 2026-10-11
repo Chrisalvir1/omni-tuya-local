@@ -39,10 +39,12 @@ for mod_name in [
     "homeassistant.components.alarm_control_panel",
     "homeassistant.components.binary_sensor",
     "homeassistant.components.button",
+    "homeassistant.components.camera",
     "homeassistant.components.climate",
     "homeassistant.components.cover",
     "homeassistant.components.diagnostics",
     "homeassistant.components.fan",
+    "homeassistant.components.ffmpeg",
     "homeassistant.components.humidifier",
     "homeassistant.components.light",
     "homeassistant.components.lock",
@@ -54,6 +56,7 @@ for mod_name in [
     "homeassistant.components.text",
     "homeassistant.components.vacuum",
     "homeassistant.components.valve",
+    "homeassistant.components.websocket_api",
     "homeassistant.config_entries",
     "homeassistant.const",
     "homeassistant.core",
@@ -92,6 +95,7 @@ for comp, entity_names in [
     ("switch", ["SwitchEntity"]),
     ("light", ["LightEntity"]),
     ("button", ["ButtonEntity"]),
+    ("camera", ["Camera"]),
     ("climate", ["ClimateEntity"]),
     ("fan", ["FanEntity"]),
     ("humidifier", ["HumidifierEntity"]),
@@ -115,6 +119,12 @@ class ValveEntityFeature:
     CLOSE = 2
 
 valve_mod.ValveEntityFeature = ValveEntityFeature
+
+camera_mod = sys.modules["homeassistant.components.camera"]
+class CameraEntityFeature:
+    STREAM = 1
+
+camera_mod.CameraEntityFeature = CameraEntityFeature
 
 sensor_mod = sys.modules["homeassistant.components.sensor"]
 

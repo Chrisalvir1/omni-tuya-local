@@ -1,6 +1,6 @@
 DOMAIN = "omni_tuya_local"
-INTEGRATION_VERSION = "1.11.0"
-BUILD_NUMBER = "20261011.01"
+INTEGRATION_VERSION = "1.11.3"
+BUILD_NUMBER = "20261011.03"
 
 CONF_REGION = "region"
 CONF_API_KEY = "api_key"
@@ -60,6 +60,7 @@ EXPORT_DOMAINS = [
 ]
 
 PLATFORMS = [
+    "camera",
     "switch",
     "light",
     "fan",

@@ -200,13 +200,6 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
                 break
 
         if value is None:
-            init_dps = self.config.get("initial_dps") or {}
-            for alt in ("1", "101", "102", "103", "doorcontact_state", "is_open", "contact", "state"):
-                if alt in init_dps:
-                    value = init_dps[alt]
-                    break
-
-        if value is None:
             # A sleeping Wi-Fi contact sensor cannot be assumed closed.  Doing
             # so makes the UI look healthy while hiding a missed LAN event.
             # Home Assistant renders None as ``unknown`` until a DPS value has
@@ -245,13 +238,6 @@ class OmniTuyaDiscoveredBinarySensor(OmniTuyaEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         value = self.dps(self.dps_id)
         if value is None:
-            init_dps = self.config.get("initial_dps") or {}
-            value = init_dps.get(str(self.dps_id))
-            if value is None and str(self.dps_id) == "4":
-                value = init_dps.get("temper_alarm") or init_dps.get("tamper")
-        if value is None:
-            if getattr(self, "_attr_device_class", None) == BinarySensorDeviceClass.TAMPER:
-                return False
             return None
         return value is True or str(value).lower() in {
             "1", "true", "on", "open", "motion", "detected", "wet", "smoke", "gas", "alarm",

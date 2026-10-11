@@ -1,9 +1,30 @@
-## [1.11.1] - 2026-10-11
+## [1.11.4] - 2026-10-11
 
-- Corregir la sincronización de nombres y metadatos al volver a vincular dispositivos Tuya existentes.
-- Actualizar credenciales y el identificador LAN actual al detectar la misma MAC, conservando la identidad estable del dispositivo y entidades de Home Assistant.
-- Recargar dispositivos y títulos de configuración después de importar o sincronizar cambios desde Smart Life/Tuya Cloud.
-- Añadir pruebas de regresión para renombrado y reemparejamiento por identidad física, sin sustituir el ID estable de Home Assistant.
+- Agregar un comando WebSocket de Home Assistant autenticado y limitado a las entidades de cámara de Omni para asignar una URL RTSP firmada nueva al comenzar cada sesión HAP.
+- Actualizar Matter All-in-One Chrisalvir para solicitar esa URL al iniciar cada sesión Camera.UI/HAP, sin reutilizar deliberadamente la URL Tuya anterior cuando una renovación falla.
+- Evitar enviar el token de acceso de Home Assistant al origen RTSP directo de Tuya; no persistir ni registrar la URL firmada.
+- Tras reiniciar Home Assistant, la siguiente apertura HAP solicita una asignación nueva. El flujo requiere IoT Video Live Stream activo, conectividad con Tuya y el puente HAP actualizado.
+- Añadir pruebas del comando WebSocket y la solicitud de renovación. La disponibilidad del video depende de que Tuya y la red respondan.
+
+## [1.11.3] - 2026-10-11
+
+- Agregar entidades de cámara para IPC Tuya y comederos de video reconocidos por su categoría/producto.
+- Solicitar una URL RTSP temporal a la API oficial de video Tuya y entregarla a la plataforma Camera/Stream de Home Assistant; no guardar ni registrar URLs firmadas.
+- Mantener el control y lectura de DPS por LAN, mientras el video usa el relay Cloud de Tuya. El proyecto Tuya debe tener acceso a IoT Video Live Stream; Tuya puede cobrar el tráfico reenviado.
+- Pedir una asignación RTSP temporal para capturas y al crear el trabajador de stream de Home Assistant; no registrar ni guardar la URL firmada.
+- Documentar que Home Assistant reutiliza su trabajador de cámara: la URL Tuya aún no se renueva automáticamente al vencer; recargar la entrada de Omni crea un trabajador con una asignación nueva.
+- Documentar el uso como fuente Home Assistant Camera.UI para un accesorio HAP de Matter All-in-One Chrisalvir. La renovación transparente entre los trabajadores HA y HAP queda pendiente.
+- Verificación: cobertura unitaria de asignación RTSP, credenciales ausentes, respuesta inválida y detección del comedero/cámara.
+
+## [1.11.2] - 2026-10-11
+
+- Dejar de convertir códigos de estado de Tuya Cloud en números DPS LAN sin un `dp_id` confirmado por el producto.
+- Crear sensores a partir de DPS observados localmente y dejar como desconocido el estado que no tiene lectura LAN; retirar estados de puerta/batería inventados y valores transferidos desde entidades ajenas de Home Assistant.
+- Evitar etiquetas especulativas para DPS de contactos, canales switch por defecto y cantidad de canales supuestos en dispositivos desconocidos.
+- Corregir `diagnostics`: agrega dispositivos de todas las entradas y no devuelve claves locales.
+- Agregar soporte explícito de selección y detección LAN para protocolo 3.2 de TinyTuya.
+- Mantener el descubrimiento de DPS desde respuestas LAN y usar esquema de producto Tuya para nombres/funciones solo cuando ofrece el ID DP numérico.
+- Validación local: 81 pruebas unitarias, compilación Python y `git diff --check` correctos.
 
 ## [1.11.0] - 2026-10-11
 

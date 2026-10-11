@@ -22,6 +22,7 @@ class TestAllPlatforms(unittest.TestCase):
 
     def test_import_and_setup_all_platforms(self):
         platforms = [
+            "camera",
             "switch",
             "light",
             "sensor",
@@ -88,6 +89,14 @@ class TestAllPlatforms(unittest.TestCase):
                 "device_type": "humidifier",
                 "category": "jsq",
                 "discovered_dps": {"1": {"kind": "boolean", "name": "DPS 1"}},
+            },
+            "dev_video_feeder": {
+                "device_id": "dev_video_feeder",
+                "name": "COMEDERO MICHI",
+                "domain": "switch",
+                "device_type": "pet_feeder",
+                "category": "sp",
+                "product_name": "Smart Video Feeder",
             },
         }
         self.coordinator.store.all.return_value = dummy_devices
