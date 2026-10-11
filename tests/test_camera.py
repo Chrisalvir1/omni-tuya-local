@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch
 import tests
 
 from custom_components.omni_tuya_local.camera import is_tuya_camera
+from custom_components.omni_tuya_local import _async_fresh_camera_url
+from custom_components.omni_tuya_local.const import DOMAIN
+from custom_components.omni_tuya_local.coordinator import OmniTuyaLocalCoordinator
 from custom_components.omni_tuya_local.cloud import (
     TuyaCloudError,
     async_allocate_camera_stream,
@@ -14,6 +17,43 @@ from custom_components.omni_tuya_local.cloud import (
 
 
 class TestTuyaCamera(unittest.IsolatedAsyncioTestCase):
+    async def test_fresh_url_requires_registered_omni_camera_entity(self):
+        hass = MagicMock()
+        registry = MagicMock()
+        registry.async_get.return_value = SimpleNamespace(
+            domain="camera", platform="tuya", unique_id="not-omni"
+        )
+        with patch("custom_components.omni_tuya_local.er.async_get", return_value=registry):
+            with self.assertRaisesRegex(ValueError, "not found"):
+                await _async_fresh_camera_url(hass, "camera.feeder")
+
+    async def test_fresh_url_uses_current_cloud_credentials_and_device_id(self):
+        hass = MagicMock()
+        registry = MagicMock()
+        registry.async_get.return_value = SimpleNamespace(
+            domain="camera",
+            platform=DOMAIN,
+            unique_id=f"{DOMAIN}_device-1_camera",
+        )
+        coordinator = object.__new__(OmniTuyaLocalCoordinator)
+        coordinator.store = SimpleNamespace(cloud_config={
+            "api_key": "key", "api_secret": "secret", "region": "us"
+        })
+        coordinator.get_device_config = MagicMock(return_value={
+            "device_id": "device-1", "cloud_id": "cloud-device-1"
+        })
+        hass.data = {DOMAIN: {"entry": coordinator}}
+        with patch("custom_components.omni_tuya_local.er.async_get", return_value=registry), patch(
+            "custom_components.omni_tuya_local.async_allocate_camera_stream",
+            return_value="rtsps://tuya.invalid/session-token",
+        ) as allocate:
+            url = await _async_fresh_camera_url(hass, "camera.feeder")
+
+        self.assertEqual(url, "rtsps://tuya.invalid/session-token")
+        allocate.assert_awaited_once_with(
+            hass, "key", "secret", "us", "cloud-device-1"
+        )
+
     async def test_allocates_fresh_rtsp_url_using_cloud_api(self):
         hass = MagicMock()
 
