@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import tests
 
 from custom_components.omni_tuya_local.camera import OmniTuyaCamera, is_tuya_camera
-from custom_components.omni_tuya_local import _async_fresh_camera_url
+from custom_components.omni_tuya_local import (
+    _async_fresh_camera_url,
+    _async_register_camera_stream_websocket,
+)
 from custom_components.omni_tuya_local.const import DOMAIN
 from custom_components.omni_tuya_local.coordinator import OmniTuyaLocalCoordinator
 from custom_components.omni_tuya_local.cloud import (
@@ -17,6 +20,25 @@ from custom_components.omni_tuya_local.cloud import (
 
 
 class TestTuyaCamera(unittest.IsolatedAsyncioTestCase):
+    async def test_websocket_handler_accepts_home_assistant_dispatch_arguments(self):
+        hass = MagicMock()
+        hass.data = {}
+        connection = MagicMock()
+        msg = {"id": 7, "type": "omni_tuya_local/camera_stream", "entity_id": "camera.feeder"}
+        with patch("custom_components.omni_tuya_local.websocket_api.websocket_command", return_value=lambda handler: handler), patch(
+            "custom_components.omni_tuya_local.websocket_api.async_response", side_effect=lambda handler: handler
+        ), patch("custom_components.omni_tuya_local.websocket_api.async_register_command") as register, patch(
+            "custom_components.omni_tuya_local._async_fresh_camera_url", new_callable=AsyncMock,
+            return_value="rtsps://example.invalid/fresh-session",
+        ) as allocate:
+            _async_register_camera_stream_websocket(hass)
+            handler = register.call_args.args[1]
+            await handler(hass, connection, msg)
+
+        connection.require_admin.assert_called_once_with()
+        allocate.assert_awaited_once_with(hass, "camera.feeder")
+        connection.send_result.assert_called_once_with(7, {"url": "rtsps://example.invalid/fresh-session"})
+
     async def test_fresh_url_requires_registered_omni_camera_entity(self):
         hass = MagicMock()
         registry = MagicMock()

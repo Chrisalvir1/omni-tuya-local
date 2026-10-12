@@ -232,7 +232,7 @@ def _async_register_camera_stream_websocket(hass: HomeAssistant) -> None:
         }
     )
     @websocket_api.async_response
-    async def handle_camera_stream(connection, msg):
+    async def handle_camera_stream(hass: HomeAssistant, connection, msg):
         """Allocate a one-session RTSP URL without persisting or logging it."""
         connection.require_admin()
         try:

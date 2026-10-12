@@ -1,3 +1,9 @@
+## [1.11.9] - 2026-10-12
+
+- Corrige el controlador WebSocket `omni_tuya_local/camera_stream`: recibe los tres argumentos de Home Assistant (`hass`, conexión, mensaje). Antes fallaba con TypeError antes de asignar el RTSP y MIAO terminaba usando HLS sin vídeo.
+- Añade una prueba de regresión que ejecuta el controlador con el contrato real de despacho. Conserva la autorización de administrador.
+- Verificación directa en la instalación: Tuya asigna RTSP y FFprobe detecta H.264 640×360 a 15 fps y audio PCM μ-law a 8 kHz sin 401/404. La validación de HomeKit después de cargar la corrección se informa por separado.
+
 ## [1.11.7] - 2026-10-11
 
 - Restaurar `device_class: battery`, unidad `%` y `state_class: measurement` para sensores de batería cuyo dispositivo Tuya expone el DPS numérico sin reenviar `battery_percentage`. Evita el aviso de estadísticas de Home Assistant para SENSOR PUERTA OFICINA.
