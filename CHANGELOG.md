@@ -1,3 +1,8 @@
+## [1.11.11] - 2026-10-12
+
+- Incluye la reparación comprobada del WebSocket de cámara y conserva la inferencia de batería y estadísticas de la versión instalada 1.11.8.
+- Sincroniza la versión del manifiesto, los diagnósticos y el número de compilación de Omni.
+
 ## [1.11.10] - 2026-10-12
 
 - Corrige ambos errores del WebSocket de cámara: firma de tres argumentos de HA y autorización mediante `@websocket_api.require_admin` en lugar del método inexistente de la conexión.
