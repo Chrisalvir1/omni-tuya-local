@@ -1,3 +1,9 @@
+## [1.11.8] - 2026-10-12
+
+- Inferir el perfil de batería para DPS 2 de sensores de puerta/contacto aunque ya exista una entrada manual de `dps_map` con solo un nombre.
+- Inferir batería también de nombres descriptivos de DPS como “Batería”/“Battery”, conservando porcentaje y clase de estado válidos para las estadísticas de Home Assistant.
+- Mantener intactos los identificadores estables y los historiales existentes; la integración no elimina datos estadísticos.
+
 ## [1.11.7] - 2026-10-11
 
 - Restaurar `device_class: battery`, unidad `%` y `state_class: measurement` para sensores de batería cuyo dispositivo Tuya expone el DPS numérico sin reenviar `battery_percentage`. Evita el aviso de estadísticas de Home Assistant para SENSOR PUERTA OFICINA.

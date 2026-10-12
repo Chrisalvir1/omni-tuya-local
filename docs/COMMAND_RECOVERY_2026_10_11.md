@@ -33,4 +33,4 @@ Además, al retirar o deshabilitar un dispositivo se cierra su listener/cliente 
 
 ## Dependencias y versión
 
-TinyTuya 1.20.0 coincide con la última versión estable observada en PyPI al 11-10-2026; se mantiene fijada. No hay un manifiesto de dependencias de desarrollo propio: las pruebas de integración obtienen pytest y utilidades del checkout oficial de Home Assistant Core. requests, cryptography y colorama son transitivas de TinyTuya/Core y no se fijan aparte para no pelear con las restricciones del entorno HA. Versión de esta entrega: 1.11.0.
+TinyTuya 1.20.0 coincide con la última versión estable observada en PyPI al 11-10-2026; se mantiene fijada. No hay un manifiesto de dependencias de desarrollo propio: las pruebas de integración obtienen pytest y utilidades del checkout oficial de Home Assistant Core. requests, cryptography y colorama son transitivas de TinyTuya/Core y no se fijan aparte para no pelear con las restricciones del entorno HA. Esa entrega fue la 1.11.0; la versión actual se indica en el manifiesto y el README.

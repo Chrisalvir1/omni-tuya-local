@@ -432,6 +432,35 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
 
     def _resolve_class_and_unit(self, config: dict, dps_id: str, desc: dict) -> None:
         """Determinar device_class, unit y state_class de mayor a menor prioridad."""
+        # Contact sensors commonly expose battery as DP 2. A user may already
+        # have that DP in dps_map with only a display name; without this
+        # contextual inference it falls through to a plain sensor with no
+        # state_class, which invalidates previously recorded HA statistics.
+        device_type = (config.get("device_type") or "").lower()
+        category = (config.get("category") or "").lower()
+        domain = (config.get("domain") or "").lower()
+        device_text = " ".join(
+            str(config.get(key) or "")
+            for key in ("name", "product_name", "device_type")
+        ).lower()
+        desc_text = " ".join(
+            str(desc.get(key) or "") for key in ("name", "code", "identifier")
+        ).lower()
+        contact_device = (
+            domain == "binary_sensor"
+            or device_type in ("door_sensor", "window_sensor", "motion_sensor", "water_leak_sensor", "smoke_sensor", "gas_sensor")
+            or category in ("mcs", "cs", "pir", "ywbj", "rqbj", "sjcj")
+            or any(word in device_text for word in (
+                "puerta", "door", "ventana", "window", "apertura", "contact", "contacto", "magnetic"
+            ))
+        )
+        named_battery = any(word in desc_text for word in ("battery", "batería", "bateria"))
+        if named_battery or (str(dps_id) == "2" and contact_device):
+            self._attr_device_class = SensorDeviceClass.BATTERY
+            self._attr_native_unit_of_measurement = PERCENTAGE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            return
+
         # 1. Clase explícita en desc (dps_map)
         explicit_class = desc.get("device_class")
         explicit_unit = desc.get("unit")
@@ -443,9 +472,6 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             return
 
         # 2. Perfil para robot aspirador
-        device_type = (config.get("device_type") or "").lower()
-        category = (config.get("category") or "").lower()
-        domain = (config.get("domain") or "").lower()
         if (device_type == "robot_vacuum" or category == "sd" or domain == "vacuum") and str(dps_id) in _ROBOT_VACUUM_DPS_PROFILES:
             dc, unit, sc = _ROBOT_VACUUM_DPS_PROFILES[str(dps_id)]
             self._attr_device_class = dc

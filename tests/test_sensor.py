@@ -1,6 +1,7 @@
 import tests
 import unittest
 from unittest.mock import MagicMock
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 
 from custom_components.omni_tuya_local.sensor import (
     OmniTuyaSensor,
@@ -31,6 +32,29 @@ class TestSensor(unittest.TestCase):
         # Energy profile
         self.assertIn("17", _DPS_PROFILES)
         self.assertIn("add_ele", _DPS_PROFILES)
+
+    def test_contact_dps_two_is_battery_even_when_manually_named(self):
+        config = {
+            "device_id": "office_contact",
+            "name": "Sensor Puerta Oficina",
+            "domain": "binary_sensor",
+            "category": "mcs",
+        }
+
+        sensor = OmniTuyaSensor(self.coordinator, config, "2", {"name": "DPS 2"})
+
+        self.assertEqual(sensor._attr_device_class, SensorDeviceClass.BATTERY)
+        self.assertEqual(sensor._attr_native_unit_of_measurement, "%")
+        self.assertEqual(sensor._attr_state_class, SensorStateClass.MEASUREMENT)
+
+    def test_battery_label_restores_statistics_metadata(self):
+        config = {"device_id": "generic", "name": "Tuya device"}
+
+        sensor = OmniTuyaSensor(self.coordinator, config, "21", {"name": "Batería DPS 2"})
+
+        self.assertEqual(sensor._attr_device_class, SensorDeviceClass.BATTERY)
+        self.assertEqual(sensor._attr_native_unit_of_measurement, "%")
+        self.assertEqual(sensor._attr_state_class, SensorStateClass.MEASUREMENT)
 
     def test_advanced_electrical_profiles_are_explicit_and_multichannel(self):
         for code in ("reactive_power", "apparent_power", "frequency", "power_factor"):
