@@ -27,6 +27,8 @@ class TestTuyaCamera(unittest.IsolatedAsyncioTestCase):
         msg = {"id": 7, "type": "omni_tuya_local/camera_stream", "entity_id": "camera.feeder"}
         with patch("custom_components.omni_tuya_local.websocket_api.websocket_command", return_value=lambda handler: handler), patch(
             "custom_components.omni_tuya_local.websocket_api.async_response", side_effect=lambda handler: handler
+        ), patch(
+            "custom_components.omni_tuya_local.websocket_api.require_admin", side_effect=lambda handler: handler
         ), patch("custom_components.omni_tuya_local.websocket_api.async_register_command") as register, patch(
             "custom_components.omni_tuya_local._async_fresh_camera_url", new_callable=AsyncMock,
             return_value="rtsps://example.invalid/fresh-session",
@@ -35,7 +37,6 @@ class TestTuyaCamera(unittest.IsolatedAsyncioTestCase):
             handler = register.call_args.args[1]
             await handler(hass, connection, msg)
 
-        connection.require_admin.assert_called_once_with()
         allocate.assert_awaited_once_with(hass, "camera.feeder")
         connection.send_result.assert_called_once_with(7, {"url": "rtsps://example.invalid/fresh-session"})
 

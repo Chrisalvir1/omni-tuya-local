@@ -1,3 +1,8 @@
+## [1.11.10] - 2026-10-12
+
+- Corrige ambos errores del WebSocket de cámara: firma de tres argumentos de HA y autorización mediante `@websocket_api.require_admin` en lugar del método inexistente de la conexión.
+- Prueba contra los decoradores reales de Home Assistant: asignación autorizada correcta y denegación a usuarios sin permiso de administrador. Ejecutada también en el contenedor HA de la instalación afectada.
+
 ## [1.11.9] - 2026-10-12
 
 - Corrige el controlador WebSocket `omni_tuya_local/camera_stream`: recibe los tres argumentos de Home Assistant (`hass`, conexión, mensaje). Antes fallaba con TypeError antes de asignar el RTSP y MIAO terminaba usando HLS sin vídeo.

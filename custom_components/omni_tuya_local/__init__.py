@@ -231,10 +231,10 @@ def _async_register_camera_stream_websocket(hass: HomeAssistant) -> None:
             vol.Required("entity_id"): cv.entity_id,
         }
     )
+    @websocket_api.require_admin
     @websocket_api.async_response
     async def handle_camera_stream(hass: HomeAssistant, connection, msg):
         """Allocate a one-session RTSP URL without persisting or logging it."""
-        connection.require_admin()
         try:
             url = await _async_fresh_camera_url(hass, msg["entity_id"])
         except ValueError as err:
