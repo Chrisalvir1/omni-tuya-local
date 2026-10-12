@@ -500,7 +500,27 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             self._attr_state_class = sc
             return
 
-        # 6. Fallback: unidad del desc o None
+        # 6. A door/contact sensor often exposes battery as numeric DPS 2
+        # without forwarding Tuya's `battery_percentage` code.  Its visible
+        # label is still authoritative enough to give HA a valid battery
+        # class, percentage unit and measurement state class.  Without this,
+        # HA creates statistics once and then warns that the class vanished.
+        descriptor_text = " ".join(
+            str(value or "")
+            for value in (
+                desc.get("name"),
+                desc.get("code"),
+                desc.get("identifier"),
+                dps_label(config, dps_id),
+            )
+        ).lower()
+        if "battery" in descriptor_text or "bater" in descriptor_text:
+            self._attr_device_class = SensorDeviceClass.BATTERY
+            self._attr_native_unit_of_measurement = explicit_unit or PERCENTAGE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            return
+
+        # 7. Fallback: unidad del desc o None
         self._attr_device_class = None
         self._attr_native_unit_of_measurement = explicit_unit
         self._attr_state_class = SensorStateClass.MEASUREMENT if explicit_unit else None

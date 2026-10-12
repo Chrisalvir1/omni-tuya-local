@@ -1,3 +1,7 @@
+## [1.11.7] - 2026-10-11
+
+- Restaurar `device_class: battery`, unidad `%` y `state_class: measurement` para sensores de batería cuyo dispositivo Tuya expone el DPS numérico sin reenviar `battery_percentage`. Evita el aviso de estadísticas de Home Assistant para SENSOR PUERTA OFICINA.
+
 ## [1.11.6] - 2026-10-11
 
 - Corregir la captura de imagen de cámaras Tuya para Home Assistant 2026.10: pasar el ancho y alto como argumentos con nombre a FFmpeg, evitando que se interpreten como formato/comando y fallen con `AttributeError: 'int' object has no attribute 'read'`.

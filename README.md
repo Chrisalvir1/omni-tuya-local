@@ -9,11 +9,15 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-1.11.6-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-1.11.7-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
+
+## Novedades de la versión 1.11.7
+
+- Los sensores de batería que Tuya expone sin su código descriptivo recuperan clase de dispositivo, porcentaje y clase de estado válidos para estadísticas de Home Assistant.
 
 ## Novedades de la versión 1.11.6
 
