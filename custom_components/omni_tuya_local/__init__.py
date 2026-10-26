@@ -288,10 +288,17 @@ async def async_reload_linked_entries(hass: HomeAssistant, device_ids: set[str])
     entity objects' labels, units and capabilities bound to the old schema.
     Reload through HA so HomeKit receives fresh entity metadata too.
     """
-    for entry in list(hass.config_entries.async_entries(DOMAIN)):
-        device_id = entry.data.get(CONF_DEVICE_ID)
-        if device_id in device_ids or not device_id:
-            await hass.config_entries.async_reload(entry.entry_id)
+    entries = [entry for entry in list(hass.config_entries.async_entries(DOMAIN)) if entry.data.get(CONF_DEVICE_ID) in device_ids or not entry.data.get(CONF_DEVICE_ID)]
+    semaphore = asyncio.Semaphore(4)
+
+    async def reload(entry):
+        async with semaphore:
+            return await hass.config_entries.async_reload(entry.entry_id)
+
+    results = await asyncio.gather(*(reload(entry) for entry in entries), return_exceptions=True)
+    failed = [entry.entry_id for entry, result in zip(entries, results) if isinstance(result, Exception) or result is False]
+    if failed:
+        raise HomeAssistantError(f"Tuya metadata saved, but {len(failed)} config entries could not reload")
 
 
 def async_migrate_primary_entity_ids(hass: HomeAssistant, coordinator: OmniTuyaLocalCoordinator) -> None:
