@@ -13,6 +13,19 @@ from custom_components.omni_tuya_local.storage import TuyaDeviceStore
 
 
 class TestCloud(unittest.IsolatedAsyncioTestCase):
+    async def test_sync_promotes_generic_default_without_changing_explicit_profile(self):
+        hass = SimpleNamespace(data={})
+        with patch("custom_components.omni_tuya_local.storage.Store"):
+            store = TuyaDeviceStore(hass)
+        store._loaded = True
+        store._store.async_save = AsyncMock()
+        store._devices = {"lamp": {"device_id": "lamp", "domain": "switch", "device_type": "generic", "version": "3.5"}, "explicit": {"device_id": "explicit", "domain": "switch", "device_type": "switch"}}
+        await store.add_many([{"device_id": "lamp", "category": "dj"}, {"device_id": "explicit", "category": "dj"}])
+        self.assertEqual(store.get("lamp")["domain"], "light")
+        self.assertEqual(store.get("lamp")["device_type"], "light")
+        self.assertEqual(store.get("lamp")["version"], "3.5")
+        self.assertEqual(store.get("explicit")["domain"], "switch")
+
     async def test_relink_updates_name_credentials_and_lan_id_without_losing_ha_identity(self):
         hass = SimpleNamespace(data={})
         with patch("custom_components.omni_tuya_local.storage.Store"):

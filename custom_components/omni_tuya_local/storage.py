@@ -110,6 +110,14 @@ class TuyaDeviceStore:
                     existing_id = self._matching_device_id(normalized)
                     if existing_id:
                         existing = self._devices[existing_id]
+                        # Older/manual imports often retained the default
+                        # generic switch classification. Promote only that
+                        # placeholder when fresh product metadata identifies
+                        # a concrete type; preserve explicit user profiles.
+                        if existing.get("device_type") in (None, "", "generic") and normalized.get("device_type") not in (None, "", "generic"):
+                            existing["device_type"] = normalized["device_type"]
+                            if existing.get("domain") in (None, "", "switch"):
+                                existing["domain"] = normalized["domain"]
                         # Cloud data may refresh the local key and product schema,
                         # but it must never discard local IP/discovery state or the
                         # user's persisted serving preference.
