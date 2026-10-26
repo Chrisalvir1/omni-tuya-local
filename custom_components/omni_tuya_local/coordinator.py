@@ -387,6 +387,17 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _periodic_lan_discovery,
                 timedelta(seconds=DEFAULT_DISCOVERY_INTERVAL),
             )
+        from .models import TuyaDeviceConfig
+
+        if domain_data.get("_lan_discovery_owner") == self.entry.entry_id and any(
+            not TuyaDeviceConfig.from_dict(config).has_host
+            for config in self.store.all().values()
+        ):
+            # Start recovery as soon as the LAN listener is ready; do not make
+            # a newly imported device wait for the first periodic scan tick.
+            self.hass.async_create_task(
+                self._async_recover_lan_addresses(proactive=True)
+            )
 
     def _handle_discovered_device(
         self, device_id: str, ip: str, version: str, dps: dict[str, Any] | None = None
