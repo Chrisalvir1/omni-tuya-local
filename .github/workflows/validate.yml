@@ -13,7 +13,7 @@ permissions:
 jobs:
   validate-hassfest:
     name: Validate Hassfest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
@@ -22,7 +22,7 @@ jobs:
 
   validate-hacs:
     name: Validate HACS
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
@@ -33,7 +33,7 @@ jobs:
 
   unit-tests:
     name: Run Unit Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -57,7 +57,7 @@ jobs:
 
   home-assistant-core-compatibility:
     name: Home Assistant Core ${{ matrix.core-version }} compatibility
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
