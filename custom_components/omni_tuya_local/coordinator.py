@@ -165,10 +165,20 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # any Tuya MAC can be repaired by the single periodic scan.
                 inventory = TuyaDeviceStore(self.hass)
                 await inventory.async_load()
+                from .models import TuyaDeviceConfig
+
+                # A cloud-only/public IP is intentionally not a TCP endpoint.
+                # In that case a listener-only refresh cannot repair the
+                # record; scan the local subnet until broadcast discovery
+                # associates the device ID with its actual LAN address.
+                missing_lan_host = any(
+                    not TuyaDeviceConfig.from_dict(config).has_host
+                    for config in inventory.all().values()
+                )
                 found = await async_scan_network(
                     self.hass,
                     list(inventory.all().values()),
-                    full_subnet_scan=not proactive,
+                    full_subnet_scan=not proactive or missing_lan_host,
                 )
                 changed = 0
                 for config in found:
@@ -703,19 +713,45 @@ class OmniTuyaLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return {"success": False, "error": "device_not_found"}
             device = OmniTuyaDevice(self.hass, config)
 
+        if not device.config.has_host:
+            return {
+                "success": False,
+                "device_id": device_id,
+                "host": "",
+                "version": device.config.version,
+                "error": "no_lan_host",
+            }
+
         res = await device.async_fetch_raw_dps()
-        if isinstance(res, dict) and "dps" in res:
+        if OmniTuyaDevice._status_dps(res):
+            # A successful diagnostic probe is also a real LAN state update.
+            # Previously the test returned all DPS but left the live entity
+            # coordinator marked unavailable, which made a reachable dimmer
+            # look broken until a later normal poll happened to succeed.
+            device._merge_dps(res["dps"])
+            device._last_status_at = time.monotonic()
+            device._mark_online()
+            config = self.store.get(device_id)
+            if config:
+                schema = schema_from_dps(config, device.dps)
+                if schema != config.get("discovered_dps", {}):
+                    updated = dict(config)
+                    updated["discovered_dps"] = schema
+                    await self.store.add(updated)
+                    device.update_config(updated)
+                    self._notify_entity_refresh()
+            self._publish_device_state(device_id, device)
             return {
                 "success": True,
                 "device_id": device_id,
-                "host": device.config.host,
+                "host": device.config.effective_host,
                 "version": device.config.version,
                 "dps": res["dps"],
             }
         return {
             "success": False,
             "device_id": device_id,
-            "host": device.config.host,
+            "host": device.config.effective_host,
             "version": device.config.version,
             "error": res.get("error") if isinstance(res, dict) else "no_response",
             "raw": res,

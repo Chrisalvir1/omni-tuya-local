@@ -5,7 +5,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .models import guess_device_type, guess_domain
+from .models import guess_device_type, guess_domain, normalize_lan_ipv4
 from .pet_feeder import function_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -294,8 +294,10 @@ async def async_fetch_cloud_devices(
             "uuid": raw.get("uuid") or raw.get("local_id") or "",
             "mac": raw.get("mac") or raw.get("mac_address") or raw.get("wifi_mac") or "",
             "local_key": raw.get("local_key") or raw.get("key") or raw.get("localKey") or raw.get("localkey") or "",
-            "host": raw.get("ip") or "",
-            "ip": raw.get("ip") or "",
+            # Cloud `ip` can be a public relay/account address, not a LAN
+            # endpoint. A blank host makes the local discovery path find it.
+            "host": normalize_lan_ipv4(raw.get("ip")),
+            "ip": normalize_lan_ipv4(raw.get("ip")),
             "name": raw.get("name") or raw.get("id"),
             "version": str(raw.get("ver") or raw.get("version") or 3.3),
             "domain": guess_domain(raw),

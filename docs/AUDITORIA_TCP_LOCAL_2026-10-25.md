@@ -84,4 +84,14 @@ Fuentes: [TinyTuya en PyPI](https://pypi.org/pypi/tinytuya/json), [API de TinyTu
 5. Reconstruir/actualizar servicios del puente mediante sus controles existentes, conservando emparejamientos. Verificar en Casa órdenes y cambios de estado; no accionar cerraduras, alarmas, comederos o equipos de calor solo como prueba de conectividad.
 6. Probar reinicio y recuperación de red. Registrar dispositivos no accesibles por LAN y diferencias de esquema. La ausencia de lectura debe seguir visible como desconocido/no disponible.
 
+## Hallazgos de seguimiento en la instalación (2026-10-26)
+
+- Varios dimmers (Baño, Cocina, Habitación y Desayunador) no tenían host LAN; por eso Omni no podía abrir TCP aunque Cloud sí aportara funciones Tuya. El dimmer Café sí respondió a la lectura de diagnóstico y devolvió 15 DPS.
+- Algunos dispositivos importados mostraban una IP pública de Tuya Cloud como `host`. Esa dirección no representa el endpoint LAN y no debe utilizarse para control local. La importación ahora conserva como host solo IPv4 privadas; los registros anteriores con host público se consideran sin host válido y activan descubrimiento local de subred.
+- El botón de diagnóstico podía leer DPS con éxito sin actualizar la disponibilidad, el caché de estados ni el esquema de entidades del coordinator. La respuesta TCP válida ahora actualiza esas tres piezas.
+- Para los dimmers sin IP, el código puede buscar el dispositivo por broadcast/ID y escanear la subred; la corrección no puede inferir una dirección si el dispositivo está fuera de la LAN, aislado por VLAN o no emite anuncios. Debe conservarse la ruta TCP como transporte de control.
+- Se observaron también bombillas con dirección pública o sin respuesta LAN. No se confirmó que todas esas IP correspondieran a la misma MAC física; requieren re-descubrimiento antes de atribuir el fallo a DHCP, VLAN o firmware.
+
+La evidencia corresponde a diagnósticos de solo lectura. No se enviaron comandos a luces, no se modificaron claves y no se reiniciaron ni desemparejaron accesorios Matter/HomeKit.
+
 El cierre de la auditoría de código no equivale a confirmar funcionamiento físico de los 59 dispositivos ni a que la corrección esté publicada como release estable.

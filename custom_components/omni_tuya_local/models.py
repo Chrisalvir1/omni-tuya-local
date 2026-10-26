@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import sys
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,6 +19,24 @@ class TuyaEntityDescription:
     name: str | None = None
     device_class: str | None = None
     unit: str | None = None
+
+
+def normalize_lan_ipv4(value: Any) -> str:
+    """Normalize a private LAN IPv4; reject cloud/public addresses."""
+    try:
+        address = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return ""
+    if (
+        address.version != 4
+        or not address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+    ):
+        return ""
+    return str(address)
 
 
 @dataclass(**_DATACLASS_KWARGS)
@@ -141,9 +160,14 @@ class TuyaDeviceConfig:
     @property
     def effective_host(self) -> str:
         """IP real a usar para conectar (gateway si es sub-device)."""
-        if self.is_sub_device:
-            return self.gateway_host or self.host
-        return self.host
+        # Tuya Cloud may return a routable/cloud-side address in `ip`. Omni is
+        # deliberately LAN-only: never open a TCP connection to a public IP.
+        candidates = (
+            (self.gateway_host, self.host)
+            if self.is_sub_device
+            else (self.host,)
+        )
+        return next((host for candidate in candidates if (host := normalize_lan_ipv4(candidate))), "")
 
     @property
     def local_key_masked(self) -> str:
