@@ -69,6 +69,7 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
         config = self.coordinator.get_device_config(self.device_id) or self.config
         host = config.get("host") or config.get("ip") or ""
         local_key = config.get("local_key", "")
+        raw_meta = config.get("raw") if isinstance(config.get("raw"), dict) else {}
         # Ofuscar local_key: mostrar solo los últimos 4 caracteres
         local_key_masked = (
             f"{'*' * max(0, len(local_key) - 4)}{local_key[-4:]}"
