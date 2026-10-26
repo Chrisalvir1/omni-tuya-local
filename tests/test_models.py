@@ -6,6 +6,7 @@ from custom_components.omni_tuya_local.models import (
     guess_device_type,
     TuyaDeviceConfig,
     normalize_device,
+    sanitize_device_config,
 )
 
 
@@ -29,6 +30,9 @@ class TestModels(unittest.TestCase):
         self.assertEqual(guess_domain({"name": "Living Room Curtains"}), "cover")
         self.assertEqual(guess_domain({"product_name": "Robot Vacuum Cleaner"}), "vacuum")
         self.assertEqual(guess_domain({"name": "Dual Smart Plug Duo"}), "switch")
+        self.assertEqual(guess_domain({"name": "ROBOTINA", "model": "A1-ROPVACNIC"}), "vacuum")
+        self.assertEqual(guess_domain({"name": "ROBOTINA", "product_id": "A1-ROPVACNIC"}), "vacuum")
+        self.assertEqual(guess_domain({"name": "ROBOTINA", "raw": {"model": "A1-ROPVACNIC"}}), "vacuum")
 
     def test_guess_device_type(self):
         self.assertEqual(guess_device_type({"category": "cz"}), "outlet")
@@ -38,6 +42,19 @@ class TestModels(unittest.TestCase):
         self.assertEqual(guess_device_type({"product_name": "Smart Coffee Maker"}), "coffee_maker")
         self.assertEqual(guess_device_type({"name": "Electric Kettle"}), "kettle")
         self.assertEqual(guess_device_type({"product_name": "Air Purifier Pro"}), "air_purifier")
+        self.assertEqual(guess_device_type({"name": "ROBOTINA", "model": "A1-ROPVACNIC"}), "robot_vacuum")
+        self.assertEqual(guess_device_type({"name": "ROBOTINA", "raw": {"model": "A1-ROPVACNIC"}}), "robot_vacuum")
+
+    def test_sanitize_robotina_model_overrides_cloud_generic_classification(self):
+        data, changed = sanitize_device_config({
+            "name": "ROBOTINA",
+            "product_id": "A1-ROPVACNIC",
+            "domain": "switch",
+            "device_type": "outlet",
+        })
+        self.assertTrue(changed)
+        self.assertEqual(data["domain"], "vacuum")
+        self.assertEqual(data["device_type"], "robot_vacuum")
 
     def test_tuya_device_config(self):
         raw = {

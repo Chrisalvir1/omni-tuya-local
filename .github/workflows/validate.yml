@@ -13,19 +13,19 @@ permissions:
 jobs:
   validate-hassfest:
     name: Validate Hassfest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
       - name: Hassfest validation
         uses: home-assistant/actions/hassfest@master
 
   validate-hacs:
     name: Validate HACS
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
       - name: HACS Action
         uses: hacs/action@main
         with:
@@ -33,49 +33,46 @@ jobs:
 
   unit-tests:
     name: Run Unit Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14.2"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install tinytuya==1.20.0
+          pip install tinytuya==1.20.0 ruff==0.17.2
       - name: Compile and run unit tests
         run: |
+          ruff check custom_components/omni_tuya_local --select F
           python -m compileall -q custom_components/omni_tuya_local tests
           python -m unittest discover -s tests -v
 
   home-assistant-core-compatibility:
-    name: Home Assistant Core 2026.10.0 platform compatibility
-    runs-on: ubuntu-latest
+    name: Home Assistant Core ${{ matrix.core-version }} compatibility
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        core-version: ["2026.10.0", "2026.10.4"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: home-assistant/core
-          ref: 2026.10.0
-          path: home-assistant-core
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.14.2'
-      - name: Install Home Assistant Core 2026.10.0 test dependencies
-        run: |
-          python -m pip install uv==0.12.19
-          cd home-assistant-core
-          uv pip install --system -r requirements.txt -r requirements_test.txt
-          uv pip install --system -e . --no-deps
-      - name: Install integration runtime dependency
-        run: python -m pip install tinytuya==1.20.0
+      - name: Install real Home Assistant and integration dependencies
+        run: python -m pip install homeassistant==${{ matrix.core-version }} tinytuya==1.20.0 HAP-python==5.0.0 PyQRCode==1.2.1 base36==0.1.1 homekit-audio-proxy==1.2.1 numpy av ha-ffmpeg PyTurboJPEG pytest pytest-asyncio pytest-timeout
       - run: python -m compileall -q custom_components/omni_tuya_local tests_core
-      - run: PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest -q tests_core
+      - name: Test with real Core entity and config-flow APIs
+        env:
+          OMNI_HA_VERSION: ${{ matrix.core-version }}
+        run: PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest -q tests_core
       - run: PYTHONPATH="$GITHUB_WORKSPACE" python -m unittest discover -s tests -v

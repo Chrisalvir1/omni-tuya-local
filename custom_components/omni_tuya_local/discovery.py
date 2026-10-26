@@ -7,6 +7,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .models import TuyaDeviceConfig, normalize_lan_ipv4
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -99,9 +101,20 @@ async def async_scan_network(
             "Skipping TinyTuya scan because Omni Tuya owns UDP ports 6666/6667"
         )
 
+    known_without_host = [
+        device
+        for device in registry_devices
+        if not TuyaDeviceConfig.from_dict(device).has_host
+        and not TuyaDeviceConfig.from_dict(device).is_sub_device
+        and (device.get("local_key") or device.get("gateway_local_key"))
+    ]
     ips_to_check = set(udp_data.keys())
-    ips_to_check.update(device.get("host") or device.get("ip") for device in registry_devices if device.get("host") or device.get("ip"))
-    if not found_devices and full_subnet_scan:
+    ips_to_check.update(
+        host
+        for device in registry_devices
+        if (host := normalize_lan_ipv4(device.get("host") or device.get("ip")))
+    )
+    if full_subnet_scan and (not found_devices or known_without_host):
         ips_to_check.update(f"{subnet}.{idx}" for idx in range(1, 255))
 
     semaphore = asyncio.Semaphore(50)
@@ -126,6 +139,67 @@ async def async_scan_network(
 
     await asyncio.gather(*(_check(ip) for ip in ips_to_check))
 
+    # A port-6668 handshake only proves a Tuya service is listening; it does
+    # not identify which inventory record owns that IP. When a saved device
+    # has no LAN address, authenticate candidate endpoints with its existing
+    # local key so recovery can safely associate the address by real DPS data.
+    if known_without_host:
+        candidates = [
+            ip for ip, device in found_devices.items()
+            if str(device.get("device_id", "")).startswith("unknown_")
+        ]
+
+        def _identify(ip: str) -> dict[str, Any] | None:
+            import tinytuya
+
+            for known in known_without_host:
+                try:
+                    model = TuyaDeviceConfig.from_dict(known)
+                    if model.is_sub_device:
+                        continue
+                    dev_id = model.lan_device_id
+                    local_key = model.local_key
+                    if not dev_id or not local_key:
+                        continue
+                    client = tinytuya.Device(
+                        dev_id=dev_id,
+                        address=ip,
+                        local_key=local_key,
+                        version=float(model.version or 3.3),
+                    )
+                    client.set_socketPersistent(False)
+                    client.set_socketTimeout(1)
+                    client.set_socketRetryLimit(1)
+                    try:
+                        response = client.status()
+                    finally:
+                        client.close()
+                    if (
+                        isinstance(response, dict)
+                        and not response.get("Error")
+                        and not response.get("Err")
+                        and isinstance(response.get("dps"), dict)
+                        and response["dps"]
+                    ):
+                        return {
+                            "host": ip,
+                            "ip": ip,
+                            "device_id": known.get("device_id") or dev_id,
+                            "name": known.get("name") or f"Tuya {dev_id[:5]}",
+                            "version": str(model.version or 3.3),
+                            "mac": model.mac,
+                        }
+                except Exception:
+                    continue
+            return None
+
+        identified = await asyncio.gather(*(
+            hass.async_add_executor_job(_identify, ip) for ip in candidates
+        ))
+        for device in identified:
+            if device:
+                found_devices[device["host"]] = device
+
     final: list[dict[str, Any]] = []
     for ip, device in found_devices.items():
         match = next(
@@ -133,9 +207,8 @@ async def async_scan_network(
                 known
                 for known in registry_devices
                 if (
-                    known.get("device_id") == device["device_id"]
-                    or known.get("host") == ip
-                    or known.get("ip") == ip
+                    device["device_id"] in (known.get("device_id"), known.get("lan_device_id"), known.get("cloud_id"))
+                    or (device["device_id"].startswith("unknown_") and ip in (known.get("host"), known.get("ip")))
                     or (
                         _mac_token(known.get("mac"))
                         and _mac_token(known.get("mac")) == _mac_token(device.get("mac"))
@@ -186,7 +259,7 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
 
             sender_ip = addr[0]
             device_id = None
-            version = "3.3"
+            version = ""
             dps = None
 
             if payload is None:
@@ -222,7 +295,7 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                     or payload.get("deviceId")
                 )
                 sender_ip = payload.get("ip") or sender_ip
-                version = payload.get("version") or payload.get("ver") or "3.3"
+                version = payload.get("version") or payload.get("ver") or ""
                 dps = payload.get("dps")
                 if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
                     dps = payload["data"]["dps"]

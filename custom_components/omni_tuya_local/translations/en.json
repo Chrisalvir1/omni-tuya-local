@@ -58,7 +58,7 @@
       "cloud_error": "Could not connect to Tuya Cloud. Check your credentials, region, and IoT project permissions.",
       "no_devices": "No devices with local key were found.",
       "invalid_ip": "Invalid IP address format. Use format 192.168.x.x",
-      "connection": "Could not connect locally, but the device was saved. Configure the IP later from Options."
+      "connection": "No valid local TCP state was received. Check the IP, local key and protocol; wake battery devices. Leave the IP empty to configure it later."
     },
     "abort": {
       "already_configured": "This device is already configured.",

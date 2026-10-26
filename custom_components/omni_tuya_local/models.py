@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import sys
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,6 +19,24 @@ class TuyaEntityDescription:
     name: str | None = None
     device_class: str | None = None
     unit: str | None = None
+
+
+def normalize_lan_ipv4(value: Any) -> str:
+    """Normalize a private LAN IPv4; reject cloud/public addresses."""
+    try:
+        address = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return ""
+    if (
+        address.version != 4
+        or not address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+    ):
+        return ""
+    return str(address)
 
 
 @dataclass(**_DATACLASS_KWARGS)
@@ -132,7 +151,7 @@ class TuyaDeviceConfig:
 
     @property
     def has_host(self) -> bool:
-        return bool(self.host and self.host.strip())
+        return bool(self.effective_host and self.effective_host.strip())
 
     @property
     def is_sub_device(self) -> bool:
@@ -141,9 +160,14 @@ class TuyaDeviceConfig:
     @property
     def effective_host(self) -> str:
         """IP real a usar para conectar (gateway si es sub-device)."""
-        if self.is_sub_device:
-            return self.gateway_host or self.host
-        return self.host
+        # Tuya Cloud may return a routable/cloud-side address in `ip`. Omni is
+        # deliberately LAN-only: never open a TCP connection to a public IP.
+        candidates = (
+            (self.gateway_host, self.host)
+            if self.is_sub_device
+            else (self.host,)
+        )
+        return next((host for candidate in candidates if (host := normalize_lan_ipv4(candidate))), "")
 
     @property
     def local_key_masked(self) -> str:
@@ -158,7 +182,12 @@ def guess_domain(data: dict[str, Any]) -> str:
     name = str(data.get("name") or "").lower()
     product = str(data.get("product_name") or "").lower()
     category = str(data.get("category") or "").lower()
-    text = f"{name} {product}"
+    raw = data.get("raw") if isinstance(data.get("raw"), dict) else {}
+    model = str(data.get("model") or raw.get("model") or data.get("product_id") or "").lower()
+    text = f"{name} {product} {model}"
+
+    if any(token in text for token in ("ropvac", "vacnic")):
+        return "vacuum"
 
     # 1. Por categoría Tuya (fuente más confiable)
     if category and category in TUYA_CATEGORY_TO_DOMAIN:
@@ -167,6 +196,11 @@ def guess_domain(data: dict[str, Any]) -> str:
     # 2. Sensores binarios por categoría (que no están en el dict principal)
     if category in {"mcs", "cs", "pir", "ywbj", "rqbj", "ldcg", "sjcj"}:
         return "binary_sensor"
+
+    # Tuya Cloud may omit category `sd` for this appliance and expose only its
+    # OEM model (e.g. A1-ROPVACNIC). Classify by model before generic fallbacks.
+    if any(token in text for token in ("ropvac", "vacnic", "robot vacuum", "robotina")):
+        return "vacuum"
 
     # Si el modelo/producto es explícitamente un plug / tomacorriente / regleta
     if any(w in product for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo")):
@@ -212,7 +246,12 @@ def guess_device_type(data: dict[str, Any]) -> str:
     name = str(data.get("name") or "").lower()
     product = str(data.get("product_name") or "").lower()
     category = str(data.get("category") or "").lower()
-    text = f"{name} {product}"
+    raw = data.get("raw") if isinstance(data.get("raw"), dict) else {}
+    model = str(data.get("model") or raw.get("model") or data.get("product_id") or "").lower()
+    text = f"{name} {product} {model}"
+
+    if any(token in text for token in ("ropvac", "vacnic")):
+        return "robot_vacuum"
 
     category_map: dict[str, str] = {
         "dj": "light", "dd": "dimmer", "fwd": "light", "dc": "light",
@@ -259,7 +298,7 @@ def guess_device_type(data: dict[str, Any]) -> str:
         "washer": ("lavadora", "washer", "washing machine"),
         "dryer": ("secadora", "dryer"),
         "dishwasher": ("lavaplatos", "dishwasher"),
-        "robot_vacuum": ("robot vacuum", "aspirador robot", "sweeper robot"),
+        "robot_vacuum": ("robot vacuum", "aspirador robot", "sweeper robot", "ropvac", "vacnic", "robotina"),
         "vacuum": ("vacuum", "aspiradora"),
         "alarm_kit": ("alarm", "alarma", "security kit"),
         "siren": ("siren", "sirena"),
@@ -314,13 +353,31 @@ def sanitize_device_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     category = str(updated.get("category") or "").lower()
     dev_type = str(updated.get("device_type") or "").lower()
     domain = str(updated.get("domain") or "").lower()
-    text = f"{name} {product} {dev_type}"
+    raw = updated.get("raw") if isinstance(updated.get("raw"), dict) else {}
+    model = str(updated.get("model") or raw.get("model") or updated.get("product_id") or "").lower()
+    text = f"{name} {product} {dev_type} {model}"
+
+    if any(token in text for token in ("ropvac", "vacnic")):
+        if domain != "vacuum":
+            updated["domain"] = "vacuum"
+            changed = True
+        if dev_type != "robot_vacuum":
+            updated["device_type"] = "robot_vacuum"
+            changed = True
+        if category != "sd":
+            updated["category"] = "sd"
+            changed = True
+        return updated, changed
 
     # Detección de sensor de puerta / ventana / contacto
     is_door = any(w in text for w in ("puerta", "door", "门磁", "contact", "contacto", "apertura", "magnetic", "magnético", "magnetico")) or category in ("mcs", "cs")
     is_window = any(w in text for w in ("ventana", "window", "窗"))
 
-    if is_door or is_window:
+    # A location/name such as "Luz puerta" cannot override a known product
+    # category or the user's explicit actuator type/domain.
+    known_actuator = category in TUYA_CATEGORY_TO_DOMAIN and TUYA_CATEGORY_TO_DOMAIN[category] != "binary_sensor"
+    explicit_actuator = domain in {"light", "lock", "cover", "valve", "climate", "fan"} or dev_type in {"switch", "outlet", "power_strip", "light", "lock", "garage_door", "curtain", "valve"}
+    if (is_door or is_window) and not known_actuator and not explicit_actuator:
         if domain != "binary_sensor":
             updated["domain"] = "binary_sensor"
             changed = True
@@ -334,7 +391,6 @@ def sanitize_device_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
 
         # Cloud status exposes function codes, not numeric LAN DPS IDs. Never
         # synthesize numeric IDs or values from the device name/category.
-        init_dps = dict(updated.get("initial_dps") or {})
 
     return updated, changed
 

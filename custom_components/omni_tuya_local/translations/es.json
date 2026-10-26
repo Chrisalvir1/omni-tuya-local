@@ -58,7 +58,7 @@
       "cloud_error": "No se pudo conectar con Tuya Cloud. Verifica: 1) Access ID y Access Secret correctos (sin espacios), 2) Región del proyecto coincide, 3) La cuenta de la app Tuya/Smart Life está vinculada al proyecto IoT en iot.tuya.com. Revisa los logs de Home Assistant para ver el código de error exacto.",
       "no_devices": "No se encontraron dispositivos con local key disponible.",
       "invalid_ip": "La dirección IP no tiene formato válido. Usa el formato 192.168.x.x",
-      "connection": "No se pudo conectar localmente, pero el dispositivo se guardó. Configura la IP después desde Opciones."
+      "connection": "No se recibió un estado TCP local válido. Revisa la IP, la clave local y el protocolo; despierta el dispositivo si usa batería. Puedes dejar la IP vacía para configurarlo después."
     },
     "abort": {
       "already_configured": "Este dispositivo ya está configurado.",

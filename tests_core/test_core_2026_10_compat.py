@@ -1,6 +1,7 @@
 """Smoke tests executed against the real Home Assistant Core 2026.10 source."""
 
 import importlib
+import os
 
 import homeassistant.core  # Initialize Core's voluptuous compatibility layer first.
 from homeassistant import const
@@ -11,12 +12,13 @@ from homeassistant.components.switch import SwitchEntity
 
 
 def test_exact_core_target():
-    assert (const.MAJOR_VERSION, const.MINOR_VERSION, str(const.PATCH_VERSION)) == (2026, 10, "0")
+    expected = os.environ.get("OMNI_HA_VERSION", "2026.10.0")
+    assert f"{const.MAJOR_VERSION}.{const.MINOR_VERSION}.{const.PATCH_VERSION}" == expected
 
 
 def test_all_platform_modules_import_with_core_2026_10():
     platforms = (
-        "alarm_control_panel", "binary_sensor", "button", "climate", "cover", "fan",
+        "alarm_control_panel", "binary_sensor", "button", "camera", "valve", "climate", "cover", "fan",
         "humidifier", "light", "lock", "number", "select", "sensor", "switch", "text", "vacuum",
     )
     for platform in platforms:

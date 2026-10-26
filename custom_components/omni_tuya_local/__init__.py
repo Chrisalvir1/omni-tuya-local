@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
@@ -92,7 +92,7 @@ SYNC_CLOUD_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_API_KEY, default=""): cv.string,
         vol.Optional(CONF_API_SECRET, default=""): cv.string,
-        vol.Optional(CONF_REGION, default=DEFAULT_REGION): cv.string,
+        vol.Optional(CONF_REGION): cv.string,
         vol.Optional(CONF_DEVICE_ID, default=""): cv.string,
     }
 )
@@ -124,6 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     _async_register_camera_stream_websocket(hass)
+    async_migrate_primary_entity_ids(hass, coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_register_services(hass, entry.entry_id)
 
@@ -280,6 +281,56 @@ def _coordinators(hass: HomeAssistant) -> list[OmniTuyaLocalCoordinator]:
     ]
 
 
+async def async_reload_linked_entries(hass: HomeAssistant, device_ids: set[str]) -> None:
+    """Rebuild existing entities after a product-schema refresh, retaining IDs.
+
+    Merely refreshing the coordinator adds new entities but leaves the old
+    entity objects' labels, units and capabilities bound to the old schema.
+    Reload through HA so HomeKit receives fresh entity metadata too.
+    """
+    entries = [entry for entry in list(hass.config_entries.async_entries(DOMAIN)) if entry.data.get(CONF_DEVICE_ID) in device_ids or not entry.data.get(CONF_DEVICE_ID)]
+    semaphore = asyncio.Semaphore(4)
+
+    async def reload(entry):
+        async with semaphore:
+            return await hass.config_entries.async_reload(entry.entry_id)
+
+    results = await asyncio.gather(*(reload(entry) for entry in entries), return_exceptions=True)
+    failed = [entry.entry_id for entry, result in zip(entries, results) if isinstance(result, Exception) or result is False]
+    if failed:
+        raise HomeAssistantError(f"Tuya metadata saved, but {len(failed)} config entries could not reload")
+
+
+def async_migrate_primary_entity_ids(hass: HomeAssistant, coordinator: OmniTuyaLocalCoordinator) -> None:
+    """Correct a control's DP identity while retaining HA's entity_id.
+
+    HomeKit derives accessory identity from entity_id. Migrate only an
+    unambiguous single-channel product and never overwrite another entity.
+    """
+    from .dps import control_channels
+
+    registry = er.async_get(hass)
+    for device_id, config in coordinator.store.all().items():
+        domain = config.get("domain")
+        if domain not in {"switch", "light"}:
+            continue
+        raw = (coordinator.data or {}).get("dps", {}).get(device_id, {})
+        channels = control_channels(config, raw, domain)
+        if len(channels) != 1:
+            continue
+        dp_id = next(iter(channels))
+        if dp_id == "1":
+            continue
+        old_uid = f"{DOMAIN}_{device_id}"
+        new_uid = f"{old_uid}_{dp_id}"
+        old_id = registry.async_get_entity_id(domain, DOMAIN, old_uid)
+        if not old_id or registry.async_get_entity_id(domain, DOMAIN, new_uid):
+            continue
+        entity = registry.async_get(old_id)
+        if entity and entity.config_entry_id == coordinator.entry.entry_id:
+            registry.async_update_entity(old_id, new_unique_id=new_uid)
+
+
 class _ScopedTuyaDeviceStore:
     """Expone un único dispositivo almacenado a una config entry por dispositivo."""
 
@@ -320,158 +371,30 @@ class _ScopedTuyaDeviceStore:
 async def async_cleanup_device_entities(
     hass: HomeAssistant, coordinator: OmniTuyaLocalCoordinator
 ) -> None:
-    """Clean up duplicate, ghost, or mismatched entities from the Home Assistant entity registry."""
-    from homeassistant.helpers import entity_registry as er
-    from homeassistant.helpers import device_registry as dr
-    from .util import max_gangs_for_device
+    """Remove only this entry's primary entities after an explicit domain change.
 
+    Device names, channel-count guesses and DP numbers cannot prove that a
+    sensor is obsolete. Never delete telemetry, helpers or another entry's
+    entities during discovery or a temporary device outage.
+    """
     entity_registry = er.async_get(hass)
-    device_registry = dr.async_get(hass)
-    if not entity_registry:
-        return
-
-    domain_data = hass.data.get(DOMAIN, {})
-    global_store = domain_data.get("_device_store")
-    devices_to_clean: dict[str, dict] = {}
-    if global_store and hasattr(global_store, "all"):
-        devices_to_clean.update(global_store.all())
-    if hasattr(coordinator, "store") and coordinator.store:
-        devices_to_clean.update(coordinator.store.all())
-
-    stale_entities: set[str] = set()
-
-    for dev_id, config in devices_to_clean.items():
-        if not dev_id:
+    for dev_id, config in coordinator.store.all().items():
+        domain = config.get("domain")
+        if domain not in {"switch", "light"}:
             continue
-        dev_domain = str(config.get("domain") or "switch").lower()
-        dev_type = str(config.get("device_type") or "generic").lower()
-        cat = str(config.get("category") or "").lower()
-        product = str(config.get("product_name") or "").lower()
-        name = str(config.get("name") or "").lower()
-        text = f"{name} {product} {dev_type} {cat}".lower()
-
-        is_dimmer_or_light = (
-            dev_domain == "light"
-            or dev_type in ("dimmer", "light")
-            or "dimmer" in text
-            or "调光" in text
-        )
-
-        is_outlet_or_plug = (
-            dev_type in ("outlet", "power_strip")
-            or cat in ("cz", "pc", "sp")
-            or any(w in text for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo"))
-        )
-
-        is_wall_switch = not is_dimmer_or_light and not is_outlet_or_plug and (
-            cat in ("kg",)
-            or dev_type in ("switch", "wall_switch")
-            or any(w in text for w in (
-                "apagador", "wall switch", "interruptor", "cb01", "cb02", "cb03", "cb04",
-                "ts0001", "ts0002", "ts0003", "ts0004", "triple", "doble", "quad", "gang"
-            ))
-        )
-
-        raw_dps = (coordinator.data or {}).get("dps", {}).get(dev_id, {})
-        max_gangs = max_gangs_for_device(config, raw_dps)
-        allowed_gangs = {str(i) for i in range(1, max_gangs + 1)}
-
+        old_domain = "light" if domain == "switch" else "switch"
         prefix = f"{DOMAIN}_{dev_id}"
-
-        # 1. Obtener device de HA si está disponible
-        ha_device = None
-        if device_registry:
-            ha_device = device_for_entry(
-                device_registry, dev_id, coordinator.entry.entry_id
-            )
-
-        # 2. Recolectar todas las entidades asociadas al dispositivo
-        related_entries = []
-        if ha_device:
-            try:
-                related_entries.extend(er.async_entries_for_device(entity_registry, ha_device.id))
-            except Exception:
-                pass
-
         for ent in list(entity_registry.entities.values()):
+            if (
+                ent.platform != DOMAIN
+                or ent.config_entry_id != coordinator.entry.entry_id
+                or ent.domain != old_domain
+            ):
+                continue
             uid = ent.unique_id or ""
-            if uid == prefix or uid.startswith(f"{prefix}_") or (dev_id in uid and ent.platform == DOMAIN):
-                if ent not in related_entries:
-                    related_entries.append(ent)
-
-        if is_wall_switch:
-            # En un apagador/interruptor de pared, SÓLO se permiten exactamente
-            # los switches físicos 1..max_gangs.
-            valid_switch_uids = {prefix}
-            for i in range(2, max_gangs + 1):
-                valid_switch_uids.add(f"{prefix}_{i}")
-
-            for ent in related_entries:
-                uid = ent.unique_id or ""
-                # A. Eliminar cualquier entidad de luz duplicada (ej. PASILLO (Oculta), Luz de corredor (Oculta))
-                if ent.domain == "light":
-                    stale_entities.add(ent.entity_id)
-                    continue
-
-                # B. Eliminar cualquier sensor numérico/texto (DPS 2, DPS 3, DPS 16, Energía, Potencia)
-                if ent.domain == "sensor":
-                    stale_entities.add(ent.entity_id)
-                    continue
-
-                # C. Eliminar binary_sensors fantasma
-                if ent.domain == "binary_sensor":
-                    stale_entities.add(ent.entity_id)
-                    continue
-
-                # D. En switches: sólo permitir los canales físicos 1..max_gangs y desocultarlos si estaban ocultos
-                if ent.domain == "switch":
-                    if uid not in valid_switch_uids:
-                        stale_entities.add(ent.entity_id)
-                        continue
-                    # Asegurar que el switch físico NO esté oculto
-                    if getattr(ent, "hidden_by", None) is not None:
-                        _LOGGER.info("Unhiding wall switch entity %s", ent.entity_id)
-                        try:
-                            entity_registry.async_update_entity(ent.entity_id, hidden_by=None)
-                        except Exception as err:
-                            _LOGGER.debug("Could not unhide entity %s: %s", ent.entity_id, err)
-
-                # E. Eliminar entidades envoltorias creadas por helpers (switch_as_x, etc.) en este dispositivo
-                platform = getattr(ent, "platform", None)
-                if platform == "switch_as_x" or (ent.domain in ("fan", "light") and platform != DOMAIN):
-                    stale_entities.add(ent.entity_id)
-                    # También remover el config_entry de switch_as_x asociado si existe
-                    centry_id = getattr(ent, "config_entry_id", None)
-                    if centry_id:
-                        entry = hass.config_entries.async_get_entry(centry_id)
-                        if entry and getattr(entry, "domain", None) == "switch_as_x":
-                            _LOGGER.info("Removing switch_as_x helper entry %s for wall switch", centry_id)
-                            hass.async_create_task(hass.config_entries.async_remove(centry_id))
-                    continue
-        else:
-            for ent in related_entries:
-                uid = ent.unique_id or ""
-                ent_domain = ent.domain
-                if dev_domain == "switch" and ent_domain == "light":
-                    stale_entities.add(ent.entity_id)
-                    continue
-                if dev_domain == "light" and ent_domain == "switch":
-                    stale_entities.add(ent.entity_id)
-                    continue
-                if ent_domain in ("switch", "light"):
-                    suffix = uid[len(prefix):] if uid.startswith(prefix) else ""
-                    if suffix.startswith("_"):
-                        suffix_dp = suffix[1:]
-                        if suffix_dp.isdigit() and suffix_dp not in allowed_gangs:
-                            stale_entities.add(ent.entity_id)
-                            continue
-
-    for eid in stale_entities:
-        _LOGGER.info("Cleaning up duplicate/stale entity %s from registry", eid)
-        try:
-            entity_registry.async_remove(eid)
-        except Exception as err:
-            _LOGGER.warning("Could not remove entity %s: %s", eid, err)
+            suffix = uid[len(prefix):] if uid.startswith(prefix) else None
+            if suffix == "" or (suffix and suffix.startswith("_") and suffix[1:].isdigit()):
+                entity_registry.async_remove(ent.entity_id)
 
 
 
@@ -600,9 +523,7 @@ def _async_register_services(hass: HomeAssistant, entry_id: str) -> None:
                     )
                 )
 
-        # Recargar todos los coordinadores
-        for coord in _coordinators(hass):
-            await coord.async_reload_devices()
+        await async_reload_linked_entries(hass, {device[CONF_DEVICE_ID] for device in imported})
 
         return {
             "found": len(devices),

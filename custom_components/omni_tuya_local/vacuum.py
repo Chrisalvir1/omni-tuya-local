@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.vacuum import StateVacuumEntity, VacuumEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -46,56 +48,8 @@ class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
     )
 
     @property
-    def current_power_w(self) -> float | None:
-        """Potencia de consumo de la base/estación si está disponible (W)."""
-        val = _first_valid_dps(self, "19", "cur_power", "power")
-        if val is not None:
-            try:
-                return round(float(val) / 10.0, 1)
-            except (TypeError, ValueError):
-                return None
-        return None
-
-    @property
     def extra_state_attributes(self) -> dict:
         attrs = super().extra_state_attributes
-
-        # Telemetría de energía de estación/base (Eve Energy / Home+)
-        power_val = _first_valid_dps(self, "19", "cur_power", "power")
-        if power_val is not None:
-            try:
-                p = round(float(power_val) / 10.0, 1)
-                attrs["current_power_w"] = p
-                attrs["power"] = p
-            except (TypeError, ValueError):
-                pass
-
-        voltage_val = _first_valid_dps(self, "20", "cur_voltage", "voltage")
-        if voltage_val is not None:
-            try:
-                v = float(voltage_val)
-                attrs["voltage"] = round(v / 10.0, 1) if v > 500 else round(v, 1)
-            except (TypeError, ValueError):
-                pass
-
-        current_val = _first_valid_dps(self, "18", "cur_current", "current")
-        if current_val is not None:
-            try:
-                c = float(current_val)
-                attrs["current_a"] = round(c / 1000.0, 3)
-                attrs["current_ma"] = round(c, 1)
-                attrs["current"] = attrs["current_a"]
-            except (TypeError, ValueError):
-                pass
-
-        energy_val = _first_valid_dps(self, "17", "add_ele", "energy")
-        if energy_val is not None:
-            try:
-                e = float(energy_val)
-                attrs["total_energy_kwh"] = round(e / 100.0, 3) if e > 500 else round(e, 3)
-                attrs["energy"] = attrs["total_energy_kwh"]
-            except (TypeError, ValueError):
-                pass
 
         # Atributos de aspiración
         status = self.dps("5")
@@ -107,7 +61,7 @@ class OmniTuyaVacuum(OmniTuyaEntity, StateVacuumEntity):
             attrs["vacuum_mode"] = mode
 
         clean_time = _first_valid_dps(self, "17", "clean_time", "time")
-        if clean_time is not None and "total_energy_kwh" not in attrs:
+        if clean_time is not None:
             attrs["clean_time"] = clean_time
 
         clean_area = _first_valid_dps(self, "16", "clean_area", "area")

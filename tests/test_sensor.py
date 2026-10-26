@@ -160,6 +160,17 @@ class TestSensor(unittest.TestCase):
         self.assertTrue(_is_energy_capable_device({}, {"19": 100}))
         self.assertTrue(_is_energy_capable_device({}, {19: 100}))
 
+        # Numeric vacuum DPS 17/18 are clean time/fault by the sd profile;
+        # they are not electrical readings unless product metadata says so.
+        self.assertFalse(_is_energy_capable_device(
+            {"domain": "vacuum", "device_type": "robot_vacuum", "category": "sd"},
+            {"17": 42, "18": 3, "19": 12, "20": 121},
+        ))
+        self.assertTrue(_is_energy_capable_device(
+            {"domain": "vacuum", "dps_map": {"19": {"code": "cur_power"}}},
+            {},
+        ))
+
         # Non-energy devices
         self.assertFalse(_is_energy_capable_device({"domain": "light", "device_type": "light"}, {}))
 
@@ -201,9 +212,12 @@ class TestSensor(unittest.TestCase):
             self.assertNotIn(battery_feature, vac._attr_supported_features)
 
         self.coordinator.dps_value.side_effect = lambda dev_id, dps_id: 85 if str(dps_id) == "6" else (250 if str(dps_id) == "19" else None)
-        self.assertEqual(vac.current_power_w, 25.0)
         attrs = vac.extra_state_attributes
-        self.assertEqual(attrs.get("current_power_w"), 25.0)
+        # Standard vacuum DPS collide with energy meter IDs; don't invent
+        # electrical telemetry from DP 17/18/19/20 without product metadata.
+        self.assertNotIn("current_power_w", attrs)
+        self.assertNotIn("current_ma", attrs)
+        self.assertNotIn("total_energy_kwh", attrs)
 
         # Sensor de batería dedicado para aspiradora
         battery_sensor = OmniTuyaSensor(self.coordinator, config, "6", {"name": "Batería"})

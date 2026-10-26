@@ -1,3 +1,28 @@
+## [1.12.1] - 2026-10-26
+
+- Identifica Robotina `A1-ROPVACNIC` como aspiradora RVC aunque Tuya Cloud omita la categoría `sd`, usando también el modelo OEM anidado en la respuesta original.
+- Evita clasificar DP numéricos 17–20 de aspiradoras como energía sin códigos de función confirmados; conserva DP 17 como tiempo y DP 18 como fallo según el perfil RVC Tuya, y elimina botones duplicados con DPS incorrectos.
+- Evita que una versión de firmware MCU se use como protocolo LAN; el alta solo conserva protocolos Tuya admitidos y valida la dirección IPv4 privada antes de TCP.
+- Endurece el escaneo TinyTuya frente a respuestas inesperadas y limita los candidatos encontrados a la red privada local.
+- La conexión y lectura de DPS continúan siendo exclusivamente TCP local; los cambios no fabrican sensores ni datos que el firmware no exponga.
+
+## [1.12.0] - 2026-10-25
+
+- Corrige el alta individual después de seleccionar un dispositivo Cloud: conserva en el inventario la IP/protocolo finales y el esquema DPS leído por TCP.
+- Importa respuestas anidadas de funciones y especificaciones con IDs numéricos, incluidos sensores de solo lectura. Los estados siguen proviniendo de LAN.
+- Conserva todos los DPS observados y permite canales con IDs propios del producto, incluidos 20, 101 y 105; elimina filtros globales que ocultaban sensores de enchufes e interruptores.
+- Reconoce luces con DPS 20–24 y evita interpretar un segundo canal booleano como brillo.
+- Recarga las entradas ya enlazadas tras sincronizar metadatos, aplica la clase nativa outlet y migra identificadores de un único canal inequívoco sin cambiar su entity_id.
+- Restringe la limpieza al dominio primario anterior de la propia entrada. Conserva sensores, helpers y entidades de otras entradas.
+- Respeta escalas/unidades declaradas por el producto, mantiene enumeraciones como texto y evita reclasificar actuadores por palabras de ubicación como puerta.
+- Corrige host de gateway, invalidación de sus credenciales, respuestas vacías, solicitudes DPS de productos no estándar y clasificación de sensores de presencia alimentados.
+- Amplía la redacción de secretos y evita sobrescribir el protocolo LAN verificado durante la sincronización Cloud.
+- Actualiza acciones de CI, incorpora análisis estático y pruebas con HA 2026.10.0/2026.10.4 y el enrutador real de HomeKit Bridge. TinyTuya permanece en 1.20.0, última versión publicada verificada.
+- Auditoría y límites pendientes: docs/AUDITORIA_TCP_LOCAL_2026-10-25.md. No implica validación con hardware ni despliegue en una instalación de Home Assistant.
+- Recupera candidatos de la subred local cuando falta una IP válida y verifica la clave local antes de guardar el host; las IP públicas del inventario Cloud no se usan para TCP.
+- Una prueba TCP válida publica los DPS y la disponibilidad al coordinador para que se creen o actualicen las entidades detectadas.
+- La extracción representa los datapoints observados y declarados por el dispositivo; no inventa sensores que el firmware o la clave local no entreguen.
+
 ## [1.11.11] - 2026-10-12
 
 - Incluye la reparación comprobada del WebSocket de cámara y conserva la inferencia de batería y estadísticas de la versión instalada 1.11.8.

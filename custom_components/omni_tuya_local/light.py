@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import colorsys
 from typing import Any
 
 from homeassistant.components.light import (
@@ -9,7 +8,6 @@ from homeassistant.components.light import (
     ATTR_HS_COLOR,
     ColorMode,
     LightEntity,
-    LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -17,74 +15,21 @@ from homeassistant.core import HomeAssistant
 from .const import (
     DOMAIN,
     DPS_BRIGHTNESS,
-    DPS_COLOR_TEMP,
-    DPS_HSV,
-    DPS_MODE,
-    TUYA_BRIGHTNESS_MAX,
-    TUYA_BRIGHTNESS_MIN,
     TUYA_COLOR_TEMP_MAX,
-    TUYA_COLOR_TEMP_MIN,
 )
 from .coordinator import OmniTuyaLocalCoordinator
-from .dps import dps_label
+from .dps import control_channels, dps_label, product_dps
 from .entity import OmniTuyaEntity
 from .pet_feeder import function_id
-from .util import ha_to_tuya_brightness, tuya_to_ha_brightness, max_gangs_for_device
+from .util import ha_to_tuya_brightness, tuya_to_ha_brightness
 
 
 def _light_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tuple[str, str | None]]:
     """Determinar qué DPS exponer como canales de luz."""
-    channels_dict: dict[str, str | None] = {}
-    dps_map = config.get("dps_map") or {}
-    tuya_functions = config.get("tuya_functions") or []
-    disc_dps = config.get("discovered_dps") or {}
     raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
     if not raw_dps and coordinator.devices.get(config.get("device_id")):
-        raw_dps = coordinator.devices[config.get("device_id")].dps
-
-    max_gangs = max_gangs_for_device(config, raw_dps)
-    allowed_gangs = {str(i) for i in range(1, max_gangs + 1)}
-
-    # 1. dps_map explícito
-    for dps_id, desc in dps_map.items():
-        if str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
-            name = desc.get("name") if isinstance(desc, dict) else (desc if isinstance(desc, str) else None)
-            channels_dict[str(dps_id)] = name
-
-    # 2. tuya_functions (esquema Tuya Cloud)
-    for func in tuya_functions:
-        if not isinstance(func, dict):
-            continue
-        dp_id = function_id(func)
-        if not dp_id or not dp_id.isdigit() or dp_id not in allowed_gangs:
-            continue
-        code = str(func.get("code") or func.get("identifier") or "").lower().strip()
-        is_light_code = (
-            code in ("switch", "switch_led", "power", "light")
-            or any(code == f"{pfx}_{i}" for pfx in ("switch", "power", "light", "led") for i in range(1, 9))
-        )
-        if is_light_code:
-            name = func.get("name") or func.get("code")
-            if name:
-                name = str(name).replace("_", " ").strip().title()
-            if dp_id not in channels_dict or not channels_dict[dp_id]:
-                channels_dict[dp_id] = name
-
-    # 3. discovered_dps persistido en config (canales permitidos)
-    for dps_id, info in disc_dps.items():
-        if str(dps_id).isdigit() and str(dps_id) in allowed_gangs and isinstance(info, dict) and info.get("kind") == "boolean":
-            if str(dps_id) not in channels_dict:
-                lbl = info.get("name")
-                channels_dict[str(dps_id)] = lbl if lbl and lbl != f"DPS {dps_id}" else None
-
-    # 4. raw_dps en vivo (canales permitidos)
-    for dps_id, value in raw_dps.items():
-        if isinstance(value, bool) and str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
-            if str(dps_id) not in channels_dict:
-                channels_dict[str(dps_id)] = None
-
-    if not channels_dict:
-        channels_dict["1"] = None
+        raw_dps = coordinator.devices[config["device_id"]].dps
+    channels_dict = control_channels(config, raw_dps, "light")
 
     sorted_channels = sorted(channels_dict.items(), key=lambda item: int(item[0]))
     has_multiple = len(sorted_channels) > 1
@@ -112,12 +57,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for config in coordinator.store.all().values():
             if config.get("domain") != "light":
                 continue
-            cat = str(config.get("category") or "").lower()
-            product = str(config.get("product_name") or "").lower()
-            name = str(config.get("name") or "").lower()
-            text = f"{name} {product} {cat}".lower()
-            if any(w in text for w in ("apagador", "wall switch", "interruptor", "cb01", "cb02", "cb03", "cb04", "ts0001", "ts0002", "ts0003", "ts0004")):
-                continue
             for dps_id, name in _light_dps(config, coordinator):
                 unique_suffix = "" if dps_id == "1" else f"_{dps_id}"
                 uid = f"{DOMAIN}_{config['device_id']}{unique_suffix}"
@@ -134,7 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 def _first_valid_dps(entity: OmniTuyaEntity, *keys: str | int) -> Any:
     for k in keys:
         val = entity.dps(k)
-        if val is not None:
+        if val is not None and not isinstance(val, bool):
             return val
     return None
 
@@ -220,13 +159,37 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
         if dps_id in raw_dps:
             return True
         dps_map = self.config.get("dps_map") or {}
-        return dps_id in dps_map
+        return dps_id in dps_map or dps_id in product_dps(self.config) or dps_id in (self.config.get("discovered_dps") or {})
+
+    def _feature_dps(self, codes: set[str], legacy: str, modern: str) -> str:
+        for dp_id, desc in (self.config.get("dps_map") or {}).items():
+            code = desc.get("code") or desc.get("semantic") if isinstance(desc, dict) else desc
+            if code in codes and str(dp_id).isdigit():
+                return str(dp_id)
+        for func in self.config.get("tuya_functions") or []:
+            if isinstance(func, dict) and (func.get("code") or func.get("identifier")) in codes:
+                dp_id = function_id(func)
+                if dp_id and dp_id.isdigit():
+                    return dp_id
+        return modern if self.dps_id == "20" else legacy
+
+    @property
+    def _hsv_dps(self) -> str:
+        return self._feature_dps({"colour_data", "colour_data_v2", "hsv"}, "5", "24")
+
+    @property
+    def _color_temp_dps(self) -> str:
+        return self._feature_dps({"temp_value", "temp_value_v2", "color_temp"}, "4", "23")
+
+    @property
+    def _mode_dps(self) -> str:
+        return self._feature_dps({"work_mode", "mode"}, "2", "21")
 
     @property
     def _supports_hs_color(self) -> bool:
-        if not self._has_dps(DPS_HSV):
+        if not self._has_dps(self._hsv_dps):
             return False
-        raw = self.dps(DPS_HSV)
+        raw = self.dps(self._hsv_dps)
         if raw is not None and not isinstance(raw, str):
             return False
         return True
@@ -234,16 +197,18 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
     @property
     def _brightness_dps(self) -> str | None:
         """Determinar dinámicamente el DPS de brillo (Tuya usa 3, 2 o 22)."""
-        dps_map = self.config.get("dps_map") or {}
-        for k, v in dps_map.items():
-            if v == "brightness":
-                return str(k)
-
+        codes = {"brightness", "bright_value", "bright_value_v2"}
+        mapped = self._feature_dps(codes, "3", "22")
+        descriptors = list((self.config.get("dps_map") or {}).values()) + list(self.config.get("tuya_functions") or [])
+        for desc in descriptors:
+            code = (desc.get("code") or desc.get("semantic")) if isinstance(desc, dict) else desc
+            if code in codes and self._has_dps(mapped):
+                return mapped
         dps_2 = self.dps("2")
-        # En dimmers (como ELEGRP), DPS 2 es el brillo real (int) y DPS 3 es el límite mínimo.
-        # En bombillos RGB estándar, DPS 2 es modo ("white", "colour") y DPS 3 es brillo.
-        if self._has_dps("2") and isinstance(dps_2, int):
+        if self.dps_id != "20" and isinstance(dps_2, int) and not isinstance(dps_2, bool):
             return "2"
+        if self._has_dps(mapped) and not isinstance(self.dps(mapped), bool):
+            return mapped
 
         for dps in (DPS_BRIGHTNESS, "22"):
             if self._has_dps(dps):
@@ -256,9 +221,9 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
 
     @property
     def _supports_color_temp(self) -> bool:
-        if not self._has_dps(DPS_COLOR_TEMP):
+        if not self._has_dps(self._color_temp_dps):
             return False
-        raw = self.dps(DPS_COLOR_TEMP)
+        raw = self.dps(self._color_temp_dps)
         if raw is not None:
             if isinstance(raw, str) and not raw.isdigit():
                 return False
@@ -280,7 +245,7 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
     @property
     def color_mode(self) -> ColorMode:
         if self._supports_hs_color:
-            mode_val = str(self.dps(DPS_MODE) or "").lower()
+            mode_val = str(self.dps(self._mode_dps) or "").lower()
             if mode_val == "colour" or not self._supports_color_temp:
                 return ColorMode.HS
             return ColorMode.COLOR_TEMP
@@ -316,7 +281,7 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
     def hs_color(self) -> tuple[float, float] | None:
         if not self._supports_hs_color:
             return None
-        raw = self.dps(DPS_HSV)
+        raw = self.dps(self._hsv_dps)
         if raw is None:
             return None
         return _parse_tuya_hsv(raw)
@@ -326,7 +291,7 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
         """Temperatura de color en Kelvin."""
         if not self._supports_color_temp:
             return None
-        value = self.dps(DPS_COLOR_TEMP)
+        value = self.dps(self._color_temp_dps)
         if value is None:
             return None
         try:
@@ -358,8 +323,8 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
         if ATTR_HS_COLOR in kwargs and self._supports_hs_color:
             hs = kwargs[ATTR_HS_COLOR]
             hsv_hex = _ha_hs_to_tuya_hsv(hs[0], hs[1])
-            payload_dps[int(DPS_HSV)] = hsv_hex
-            payload_dps[int(DPS_MODE)] = "colour"
+            payload_dps[int(self._hsv_dps)] = hsv_hex
+            payload_dps[int(self._mode_dps)] = "colour"
 
         elif ATTR_COLOR_TEMP_KELVIN in kwargs and self._supports_color_temp:
             kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
@@ -368,9 +333,9 @@ class OmniTuyaLight(OmniTuyaEntity, LightEntity):
             # Convertir mireds (153-500) → 0-1000
             normalized = (500 - mireds) / (500 - 153)
             tuya_ct = int(max(0, min(TUYA_COLOR_TEMP_MAX, normalized * TUYA_COLOR_TEMP_MAX)))
-            payload_dps[int(DPS_COLOR_TEMP)] = tuya_ct
+            payload_dps[int(self._color_temp_dps)] = tuya_ct
             if self._supports_hs_color:
-                payload_dps[int(DPS_MODE)] = "white"
+                payload_dps[int(self._mode_dps)] = "white"
 
         await self.coordinator.async_set_values(self.device_id, payload_dps)
 

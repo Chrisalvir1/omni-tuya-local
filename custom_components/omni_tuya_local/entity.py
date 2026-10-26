@@ -20,9 +20,6 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
         unique_suffix = "" if self.dps_id == "1" else f"_{self.dps_id}"
         self._attr_unique_id = f"{DOMAIN}_{self.device_id}{unique_suffix}"
 
-        device_type = config.get("device_type") or "generic"
-        type_meta = DEVICE_TYPES.get(device_type, DEVICE_TYPES["generic"])
-
         self._device_info_config = config
 
     @property
@@ -30,13 +27,16 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
         config = self.coordinator.get_device_config(self.device_id) or self._device_info_config
         device_type = config.get("device_type") or "generic"
         type_meta = DEVICE_TYPES.get(device_type, DEVICE_TYPES["generic"])
+        raw_meta = config.get("raw") if isinstance(config.get("raw"), dict) else {}
         return DeviceInfo(
             identifiers={(DOMAIN, self.device_id)},
             name=config.get("name") or self.device_id,
             manufacturer="Tuya",
-            # model: product_name → tipo legible → dominio
+            # Preserve Tuya's OEM model when product_name is only a category label.
             model=(
-                config.get("product_name")
+                config.get("model")
+                or raw_meta.get("model")
+                or config.get("product_name")
                 or type_meta.get("label")
                 or config.get("domain")
                 or "Tuya Local"
@@ -69,6 +69,7 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
         config = self.coordinator.get_device_config(self.device_id) or self.config
         host = config.get("host") or config.get("ip") or ""
         local_key = config.get("local_key", "")
+        raw_meta = config.get("raw") if isinstance(config.get("raw"), dict) else {}
         # Ofuscar local_key: mostrar solo los últimos 4 caracteres
         local_key_masked = (
             f"{'*' * max(0, len(local_key) - 4)}{local_key[-4:]}"
@@ -82,6 +83,7 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
             "protocol_version": config.get("version"),
             "product_name": config.get("product_name"),
             "product_id": config.get("product_id"),
+            "model": config.get("model") or raw_meta.get("model"),
             "category": config.get("category"),
             "device_type": config.get("device_type"),
             "local_key": local_key_masked,

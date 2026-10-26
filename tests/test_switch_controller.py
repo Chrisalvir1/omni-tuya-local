@@ -12,6 +12,7 @@ from custom_components.omni_tuya_local import async_cleanup_device_entities
 class TestSwitchController(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.coordinator = MagicMock()
+        self.coordinator.entry.entry_id = "entry_1"
         self.coordinator.data = {"dps": {}, "available": {}}
         self.coordinator.devices = {}
         self.coordinator.store = MagicMock()
@@ -80,7 +81,7 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(added_entities), 0)
 
     async def test_sensor_setup_excludes_switch_channels_and_internal_dps(self):
-        """Sensors should NOT be created for switch buttons 1, 2, 3 or timer DP 7 on a wall switch."""
+        """Boolean channels are controls; observed timer DP 7 remains readable."""
         hass = MagicMock()
         hass.data = {DOMAIN: {"entry_1": self.coordinator}}
         entry = MagicMock()
@@ -111,11 +112,11 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
 
         added_sensors = []
         await async_setup_sensor(hass, entry, lambda ents: added_sensors.extend(ents))
-        # No phantom sensors for 1, 2, 3, 7, 16, 18, 19
-        self.assertEqual(len(added_sensors), 0)
+        # Only the actually observed numeric DP 7 is added.
+        self.assertEqual([entity.dps_id for entity in added_sensors], ["7"])
 
     async def test_cleanup_device_entities(self):
-        """Test cleaning up duplicate light entities, phantom Canal 16, and fake sensors."""
+        """Domain cleanup removes old primary lights but preserves telemetry and offline channels."""
         hass = MagicMock()
         dev_id = "bf36e4d593706cf0f9sokk"
         config = {
@@ -130,6 +131,7 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
         # Mock entity registry
         class FakeEntityEntry:
             def __init__(self, entity_id, platform, domain, unique_id):
+                self.config_entry_id = "entry_1"
                 self.entity_id = entity_id
                 self.platform = platform
                 self.domain = domain
@@ -167,15 +169,15 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(f"switch.{DOMAIN}_{dev_id}_2", removed_ids)
         self.assertNotIn(f"switch.{DOMAIN}_{dev_id}_3", removed_ids)
 
-        # All invalid / duplicate entities MUST be removed
-        self.assertIn(f"switch.{DOMAIN}_{dev_id}_16", removed_ids)
+        # Only old primary lights are proven obsolete by the domain change.
+        self.assertNotIn(f"switch.{DOMAIN}_{dev_id}_16", removed_ids)
         self.assertIn(f"light.{DOMAIN}_{dev_id}_2", removed_ids)
         self.assertIn(f"light.{DOMAIN}_{dev_id}_3", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_2", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_3", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_7", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_18", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_19", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_2", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_3", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_7", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_18", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_19", removed_ids)
 
     def test_switch_dps_double_controller(self):
         """Any 2-gang controller (Apagador Doble, CB02, TS0002) should ONLY expose channels 1 and 2."""
@@ -240,6 +242,7 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
 
         class FakeEntityEntry:
             def __init__(self, entity_id, platform, domain, unique_id):
+                self.config_entry_id = "entry_1"
                 self.entity_id = entity_id
                 self.platform = platform
                 self.domain = domain
@@ -276,16 +279,16 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(f"switch.{DOMAIN}_{dev_id}_2", removed_ids)
 
         # Duplicate switch for channel 1 and channel 16 must be removed
-        self.assertIn(f"switch.{DOMAIN}_{dev_id}_1", removed_ids)
-        self.assertIn(f"switch.{DOMAIN}_{dev_id}_16", removed_ids)
+        self.assertNotIn(f"switch.{DOMAIN}_{dev_id}_1", removed_ids)
+        self.assertNotIn(f"switch.{DOMAIN}_{dev_id}_16", removed_ids)
 
-        # Ghost lights and ghost sensors must all be removed
+        # Preserve telemetry; remove only primary lights from the old domain.
         self.assertIn(f"light.{DOMAIN}_{dev_id}", removed_ids)
         self.assertIn(f"light.{DOMAIN}_{dev_id}_2", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_2", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_16", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_17", removed_ids)
-        self.assertIn(f"sensor.{DOMAIN}_{dev_id}_19", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_2", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_16", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_17", removed_ids)
+        self.assertNotIn(f"sensor.{DOMAIN}_{dev_id}_19", removed_ids)
 
     async def test_cleanup_preserves_plug_and_sensors(self):
         """A Wifi Plug / outlet must NOT be treated as a wall switch; its power sensors must be preserved."""
@@ -304,6 +307,7 @@ class TestSwitchController(unittest.IsolatedAsyncioTestCase):
 
         class FakeEntityEntry:
             def __init__(self, entity_id, platform, domain, unique_id):
+                self.config_entry_id = "entry_1"
                 self.entity_id = entity_id
                 self.platform = platform
                 self.domain = domain

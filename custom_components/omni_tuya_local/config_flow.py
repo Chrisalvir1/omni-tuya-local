@@ -35,6 +35,7 @@ from .const import (
     SERVICE_SYNC_CLOUD,
 )
 from .cloud import async_fetch_cloud_devices, find_cloud_device_by_mac, normalize_mac
+from .models import normalize_lan_ipv4
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -301,10 +302,8 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 data=dev,
                             )
                         )
-                for coordinator in self.hass.data.get(DOMAIN, {}).values():
-                    reload_devices = getattr(coordinator, "async_reload_devices", None)
-                    if reload_devices:
-                        await reload_devices()
+                from . import async_reload_linked_entries
+                await async_reload_linked_entries(self.hass, {dev[CONF_DEVICE_ID] for dev in imported})
                 return self.async_abort(reason="bulk_import_done", description_placeholders={"added": str(added)})
 
             selected = next(
@@ -328,10 +327,8 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 name = selected.get("name") or selected[CONF_DEVICE_ID]
                 if existing_entry.title != name:
                     self.hass.config_entries.async_update_entry(existing_entry, title=name)
-                for coordinator in self.hass.data.get(DOMAIN, {}).values():
-                    reload_devices = getattr(coordinator, "async_reload_devices", None)
-                    if reload_devices:
-                        await reload_devices()
+                from . import async_reload_linked_entries
+                await async_reload_linked_entries(self.hass, {selected[CONF_DEVICE_ID]})
                 return self.async_abort(reason="already_configured")
             self._selected_cloud_device = selected
             return await self.async_step_search_device()
@@ -372,14 +369,18 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     timeout=12,
                 )
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, OSError, ValueError, TypeError):
                 found = {}
 
-            if found.get("ip"):
-                device[CONF_HOST] = found["ip"]
-                device["ip"] = found["ip"]
-            if found.get("version"):
-                device[CONF_VERSION] = str(found["version"])
+            local_ip = normalize_lan_ipv4(found.get("ip"))
+            if local_ip:
+                device[CONF_HOST] = local_ip
+                device["ip"] = local_ip
+            candidate_version = str(found.get("version") or "")
+            if candidate_version in PROTOCOL_VERSIONS_NO_AUTO:
+                device[CONF_VERSION] = candidate_version
+            elif str(device.get(CONF_VERSION) or "") not in PROTOCOL_VERSIONS:
+                device[CONF_VERSION] = "auto"
             self._device_data = device
             return await self.async_step_local_device()
 
@@ -395,28 +396,41 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_local_device(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
         defaults = dict(self._device_data)
+        if str(defaults.get(CONF_VERSION) or "") not in PROTOCOL_VERSIONS:
+            defaults[CONF_VERSION] = "auto"
 
         if user_input is not None:
             config = dict(defaults)
             config.update(user_input)
+            for key in (CONF_HOST, CONF_DEVICE_ID, CONF_LOCAL_KEY):
+                config[key] = str(config.get(key) or "").strip()
 
             # Validar IP si se proporcionó
             host = config.get(CONF_HOST, "").strip()
-            if host and not _is_valid_ip(host):
+            if host and (not _is_valid_ip(host) or not normalize_lan_ipv4(host)):
                 errors[CONF_HOST] = "invalid_ip"
             else:
-                protocol = config.get(CONF_VERSION, DEFAULT_VERSION)
-                if protocol == "auto":
+                protocol = str(config.get(CONF_VERSION) or DEFAULT_VERSION)
+                if protocol not in PROTOCOL_VERSIONS:
+                    protocol = DEFAULT_VERSION
+                    config[CONF_VERSION] = protocol
+                ok = True
+                if protocol == "auto" and host:
                     ok, detected = await _async_test_any_protocol(self.hass, config)
-                    config[CONF_VERSION] = detected if ok else str(defaults.get(CONF_VERSION) or "3.3")
+                    config[CONF_VERSION] = detected
                 elif host:
-                    # Solo probar si hay IP configurada
-                    await _async_test_tuya_connection(self.hass, config, protocol)
+                    ok = await _async_test_tuya_connection(self.hass, config, protocol)
+                elif protocol == "auto":
+                    config[CONF_VERSION] = DEFAULT_VERSION
 
-                await self.async_set_unique_id(config[CONF_DEVICE_ID])
-                self._abort_if_unique_id_configured()
-                self._device_data = config
-                return await self.async_step_device_details()
+                if not ok:
+                    errors["base"] = "connection"
+                    defaults = config
+                else:
+                    await self.async_set_unique_id(config[CONF_DEVICE_ID])
+                    self._abort_if_unique_id_configured()
+                    self._device_data = config
+                    return await self.async_step_device_details()
 
         has_cloud_data = bool(defaults.get(CONF_LOCAL_KEY))
         hint = (
@@ -462,6 +476,14 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             config = dict(self._device_data)
             config["name"] = user_input[CONF_NAME]
+            # Cloud selection already inserted a preliminary inventory record.
+            # Setup intentionally trusts that inventory over entry.data; save
+            # the final LAN IP/protocol/schema here or the user's corrections
+            # and discovered entities are silently ignored on first setup.
+            from .storage import TuyaDeviceStore
+            store = TuyaDeviceStore(self.hass)
+            await store.async_load()
+            await store.add(config)
             return self.async_create_entry(title=config["name"], data=config)
 
         default_name = (
@@ -873,9 +895,13 @@ def _find_tuya_device(device_id: str) -> dict[str, Any]:
     except Exception:
         return {}
 
+    if not isinstance(found, dict):
+        return {}
     for ip, details in found.items():
+        if not isinstance(details, dict):
+            continue
         if details.get("id") == device_id or details.get("gwId") == device_id:
-            return {"ip": ip, "version": details.get("ver")}
+            return {"ip": normalize_lan_ipv4(ip), "version": details.get("ver")}
     return {}
 
 
@@ -897,17 +923,43 @@ async def _async_test_tuya_connection(hass, config: dict[str, Any], protocol: st
 
 
 def _test_tuya_connection(config: dict[str, Any], protocol: str) -> bool:
+    device = None
+    parent = None
     try:
         import tinytuya
+        from .models import TuyaDeviceConfig
+        from .dps import query_dps_ids, schema_from_dps
+        from .device import OmniTuyaDevice
 
-        device = tinytuya.Device(
-            dev_id=config[CONF_DEVICE_ID],
-            address=config[CONF_HOST],
-            local_key=config[CONF_LOCAL_KEY],
-            version=float(protocol),
-        )
+        model = TuyaDeviceConfig.from_dict(config)
+        if not model.has_host:
+            return False
+        if model.is_sub_device:
+            parent = tinytuya.Device(
+                dev_id=model.gateway_id, address=model.effective_host,
+                local_key=model.gateway_local_key or model.local_key, version=float(protocol),
+            )
+            parent.set_socketTimeout(1.5)
+            parent.set_socketRetryLimit(1)
+            device = tinytuya.Device(dev_id=model.lan_device_id, cid=model.node_id, parent=parent)
+        else:
+            device = tinytuya.Device(
+                dev_id=model.lan_device_id, address=model.effective_host,
+                local_key=model.local_key, version=float(protocol),
+            )
         device.set_socketPersistent(False)
+        device.set_socketTimeout(1.5)
+        device.set_socketRetryLimit(1)
         raw = device.status()
-        return bool(isinstance(raw, dict) and "dps" in raw)
+        if not OmniTuyaDevice._status_dps(raw):
+            raw = device.updatedps(query_dps_ids(config))
+        if OmniTuyaDevice._status_dps(raw):
+            config["discovered_dps"] = schema_from_dps(config, raw["dps"])
+            return True
+        return False
     except Exception:
         return False
+    finally:
+        for client in (device, parent):
+            if client is not None:
+                client.close()
