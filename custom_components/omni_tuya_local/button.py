@@ -24,10 +24,9 @@ _DEVICE_BUTTONS: dict[str, list[dict[str, Any]]] = {
     "ir_remote": [
         {"dps_id": "1", "name": "Encender/Apagar", "dps_value": "power", "icon": "mdi:power"},
     ],
-    "robot_vacuum": [
-        {"dps_id": "1", "name": "Iniciar limpieza",    "dps_value": True,  "icon": "mdi:robot-vacuum"},
-        {"dps_id": "3", "name": "Volver a base",       "dps_value": "chargego", "icon": "mdi:home-import-outline"},
-    ],
+    # Vacuum controls live on the HA vacuum entity (and map to Matter RVC).
+    # Avoid duplicate buttons: DP 1 is not the start command for standard `sd`
+    # devices, and return-to-base is a mode command rather than a generic button.
     "coffee_maker": [
         {"dps_id": "1", "name": "Preparar café",       "dps_value": True, "icon": "mdi:coffee"},
     ],

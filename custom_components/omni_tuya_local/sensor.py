@@ -91,6 +91,7 @@ _ROBOT_VACUUM_DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None
     "8": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "9": (None, PERCENTAGE, SensorStateClass.MEASUREMENT),
     "17": (SensorDeviceClass.DURATION, "min", SensorStateClass.MEASUREMENT),
+    "18": (None, None, None),  # Standard Tuya vacuum fault/status code, not current.
 }
 
 from .pet_feeder import function_id
@@ -254,6 +255,16 @@ def _is_energy_capable_device(config: dict[str, Any], raw_dps: dict[str, Any]) -
             code = str(func.get("code") or func.get("identifier") or "").lower()
             if code in ("cur_power", "cur_voltage", "cur_current", "add_ele", "phase_a"):
                 return True
+    # Vacuum DPS 17/18 are normally clean-time/fault codes, not energy meters.
+    # For a vacuum, only trust an explicit Tuya function or dps_map code above;
+    # raw numeric values alone are not evidence of electrical telemetry.
+    if dev_type == "robot_vacuum" or cat == "sd" or config.get("domain") == "vacuum":
+        return any(
+            isinstance(desc, dict)
+            and str(desc.get("code") or desc.get("identifier") or "").lower()
+            in ("cur_power", "cur_voltage", "cur_current", "add_ele", "phase_a")
+            for desc in (config.get("dps_map") or {}).values()
+        )
     # Si reporta DPS 17-20 con valores numéricos válidos (ej. enchufe o medidor sin metadata)
     if isinstance(raw_dps, dict):
         for dp_key in ("17", "18", "19", "20", 17, 18, 19, 20):
@@ -386,6 +397,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     ("7", "Vida del cepillo lateral"),
                     ("8", "Vida del cepillo principal"),
                     ("9", "Vida del filtro"),
+                    ("18", "Fallo del robot"),
                 ):
                     if vac_dp not in configured_dps and (
                         vac_dp in raw_dps

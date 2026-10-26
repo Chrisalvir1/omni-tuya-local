@@ -1,3 +1,11 @@
+## [1.12.1] - 2026-10-26
+
+- Identifica Robotina `A1-ROPVACNIC` como aspiradora RVC aunque Tuya Cloud omita la categoría `sd`, usando también el modelo OEM anidado en la respuesta original.
+- Evita clasificar DP numéricos 17–20 de aspiradoras como energía sin códigos de función confirmados; conserva DP 17 como tiempo y DP 18 como fallo según el perfil RVC Tuya, y elimina botones duplicados con DPS incorrectos.
+- Evita que una versión de firmware MCU se use como protocolo LAN; el alta solo conserva protocolos Tuya admitidos y valida la dirección IPv4 privada antes de TCP.
+- Endurece el escaneo TinyTuya frente a respuestas inesperadas y limita los candidatos encontrados a la red privada local.
+- La conexión y lectura de DPS continúan siendo exclusivamente TCP local; los cambios no fabrican sensores ni datos que el firmware no exponga.
+
 ## [1.12.0] - 2026-10-25
 
 - Corrige el alta individual después de seleccionar un dispositivo Cloud: conserva en el inventario la IP/protocolo finales y el esquema DPS leído por TCP.

@@ -35,6 +35,7 @@ from .const import (
     SERVICE_SYNC_CLOUD,
 )
 from .cloud import async_fetch_cloud_devices, find_cloud_device_by_mac, normalize_mac
+from .models import normalize_lan_ipv4
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -368,14 +369,18 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     timeout=12,
                 )
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, OSError, ValueError, TypeError):
                 found = {}
 
-            if found.get("ip"):
-                device[CONF_HOST] = found["ip"]
-                device["ip"] = found["ip"]
-            if found.get("version"):
-                device[CONF_VERSION] = str(found["version"])
+            local_ip = normalize_lan_ipv4(found.get("ip"))
+            if local_ip:
+                device[CONF_HOST] = local_ip
+                device["ip"] = local_ip
+            candidate_version = str(found.get("version") or "")
+            if candidate_version in PROTOCOL_VERSIONS_NO_AUTO:
+                device[CONF_VERSION] = candidate_version
+            elif str(device.get(CONF_VERSION) or "") not in PROTOCOL_VERSIONS:
+                device[CONF_VERSION] = "auto"
             self._device_data = device
             return await self.async_step_local_device()
 
@@ -391,6 +396,8 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_local_device(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
         defaults = dict(self._device_data)
+        if str(defaults.get(CONF_VERSION) or "") not in PROTOCOL_VERSIONS:
+            defaults[CONF_VERSION] = "auto"
 
         if user_input is not None:
             config = dict(defaults)
@@ -400,10 +407,13 @@ class OmniTuyaLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Validar IP si se proporcionó
             host = config.get(CONF_HOST, "").strip()
-            if host and not _is_valid_ip(host):
+            if host and (not _is_valid_ip(host) or not normalize_lan_ipv4(host)):
                 errors[CONF_HOST] = "invalid_ip"
             else:
-                protocol = config.get(CONF_VERSION, DEFAULT_VERSION)
+                protocol = str(config.get(CONF_VERSION) or DEFAULT_VERSION)
+                if protocol not in PROTOCOL_VERSIONS:
+                    protocol = DEFAULT_VERSION
+                    config[CONF_VERSION] = protocol
                 ok = True
                 if protocol == "auto" and host:
                     ok, detected = await _async_test_any_protocol(self.hass, config)
@@ -885,9 +895,13 @@ def _find_tuya_device(device_id: str) -> dict[str, Any]:
     except Exception:
         return {}
 
+    if not isinstance(found, dict):
+        return {}
     for ip, details in found.items():
+        if not isinstance(details, dict):
+            continue
         if details.get("id") == device_id or details.get("gwId") == device_id:
-            return {"ip": ip, "version": details.get("ver")}
+            return {"ip": normalize_lan_ipv4(ip), "version": details.get("ver")}
     return {}
 
 

@@ -182,7 +182,12 @@ def guess_domain(data: dict[str, Any]) -> str:
     name = str(data.get("name") or "").lower()
     product = str(data.get("product_name") or "").lower()
     category = str(data.get("category") or "").lower()
-    text = f"{name} {product}"
+    raw = data.get("raw") if isinstance(data.get("raw"), dict) else {}
+    model = str(data.get("model") or raw.get("model") or data.get("product_id") or "").lower()
+    text = f"{name} {product} {model}"
+
+    if any(token in text for token in ("ropvac", "vacnic")):
+        return "vacuum"
 
     # 1. Por categoría Tuya (fuente más confiable)
     if category and category in TUYA_CATEGORY_TO_DOMAIN:
@@ -191,6 +196,11 @@ def guess_domain(data: dict[str, Any]) -> str:
     # 2. Sensores binarios por categoría (que no están en el dict principal)
     if category in {"mcs", "cs", "pir", "ywbj", "rqbj", "ldcg", "sjcj"}:
         return "binary_sensor"
+
+    # Tuya Cloud may omit category `sd` for this appliance and expose only its
+    # OEM model (e.g. A1-ROPVACNIC). Classify by model before generic fallbacks.
+    if any(token in text for token in ("ropvac", "vacnic", "robot vacuum", "robotina")):
+        return "vacuum"
 
     # Si el modelo/producto es explícitamente un plug / tomacorriente / regleta
     if any(w in product for w in ("plug", "outlet", "socket", "tomacorriente", "enchufe", "power strip", "regleta", "duo")):
@@ -236,7 +246,12 @@ def guess_device_type(data: dict[str, Any]) -> str:
     name = str(data.get("name") or "").lower()
     product = str(data.get("product_name") or "").lower()
     category = str(data.get("category") or "").lower()
-    text = f"{name} {product}"
+    raw = data.get("raw") if isinstance(data.get("raw"), dict) else {}
+    model = str(data.get("model") or raw.get("model") or data.get("product_id") or "").lower()
+    text = f"{name} {product} {model}"
+
+    if any(token in text for token in ("ropvac", "vacnic")):
+        return "robot_vacuum"
 
     category_map: dict[str, str] = {
         "dj": "light", "dd": "dimmer", "fwd": "light", "dc": "light",
@@ -283,7 +298,7 @@ def guess_device_type(data: dict[str, Any]) -> str:
         "washer": ("lavadora", "washer", "washing machine"),
         "dryer": ("secadora", "dryer"),
         "dishwasher": ("lavaplatos", "dishwasher"),
-        "robot_vacuum": ("robot vacuum", "aspirador robot", "sweeper robot"),
+        "robot_vacuum": ("robot vacuum", "aspirador robot", "sweeper robot", "ropvac", "vacnic", "robotina"),
         "vacuum": ("vacuum", "aspiradora"),
         "alarm_kit": ("alarm", "alarma", "security kit"),
         "siren": ("siren", "sirena"),
@@ -338,7 +353,21 @@ def sanitize_device_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     category = str(updated.get("category") or "").lower()
     dev_type = str(updated.get("device_type") or "").lower()
     domain = str(updated.get("domain") or "").lower()
-    text = f"{name} {product} {dev_type}"
+    raw = updated.get("raw") if isinstance(updated.get("raw"), dict) else {}
+    model = str(updated.get("model") or raw.get("model") or updated.get("product_id") or "").lower()
+    text = f"{name} {product} {dev_type} {model}"
+
+    if any(token in text for token in ("ropvac", "vacnic")):
+        if domain != "vacuum":
+            updated["domain"] = "vacuum"
+            changed = True
+        if dev_type != "robot_vacuum":
+            updated["device_type"] = "robot_vacuum"
+            changed = True
+        if category != "sd":
+            updated["category"] = "sd"
+            changed = True
+        return updated, changed
 
     # Detección de sensor de puerta / ventana / contacto
     is_door = any(w in text for w in ("puerta", "door", "门磁", "contact", "contacto", "apertura", "magnetic", "magnético", "magnetico")) or category in ("mcs", "cs")
