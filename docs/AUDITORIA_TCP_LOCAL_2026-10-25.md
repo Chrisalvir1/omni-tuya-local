@@ -4,7 +4,7 @@ Base auditada: `76dd2b0b65d1b0b0d3505746156c034f83a1cc9c` (1.11.11). Correccione
 
 ## Evidencia de la instalación
 
-Inspección mediante la terminal autenticada de Home Assistant, sin publicar credenciales: HA Core 2026.10.3, Omni 1.11.11, **69 dispositivos en el inventario y ninguno con `tuya_functions`**. Esto confirma que la ausencia del esquema afecta también a los dispositivos ya enlazados.
+Inspección mediante la terminal autenticada de Home Assistant, sin publicar credenciales: HA Core 2026.10.3, Omni 1.11.11, **59 dispositivos en el inventario y ninguno con `tuya_functions`**. Esto confirma que la ausencia del esquema afecta también a los dispositivos ya enlazados.
 
 Consulta real de Smart Plug Duo: `getfunctions()` devuelve `result.functions` con códigos sin IDs; `getdps()` devuelve `result.functions` y `result.status` con `dp_id`. El producto declara dos interruptores (DP 1/2) y dos temporizadores (DP 9/10); esa respuesta no declara medidores de energía. No corresponde inventar corriente, potencia o voltaje para ese dispositivo.
 
@@ -14,6 +14,7 @@ El usuario exporta con `Chrisalvir1/matter-all-in-one-chrisalvir`, no exclusivam
 
 | Prioridad | Hallazgo y efecto | Corrección |
 |---|---|---|
+| P1 | La acción sin parámetros inyecta región `us` y reemplaza la región `eu` guardada; la cuenta devuelve cero dispositivos. | No insertar región por defecto en el esquema del servicio; usar la configuración guardada. |
 | P1 | Alta individual guarda una ficha preliminar; el arranque prefiere inventario y pierde IP/protocolo/DPS finales. | Persistir la ficha final antes de crear la entrada. |
 | P1 | `result.functions` anidado se descarta. | Normalizar ambas formas de respuesta. |
 | P1 | Solo se consultan funciones; faltan IDs numéricos y telemetría de solo lectura. | Consultar especificaciones `getdps`; unir funciones/estados por código y conservar permisos. |
@@ -69,8 +70,8 @@ Fuentes: [TinyTuya en PyPI](https://pypi.org/pypi/tinytuya/json), [API de TinyTu
 ## Validación automatizada
 
 - Base: 92 pruebas unitarias existentes aprobadas, aunque no detectaban los defectos anteriores.
-- Corrección: 115 pruebas unitarias aprobadas en el entorno Python 3.12; nuevas regresiones cubren importación anidada, alta individual, sensores desconocidos, IDs altos, escalas y migración.
-- 16 pruebas con HA Core real y Python 3.14.2: incluyen contratos de entidades, comandos rechazados, WebSocket, flujo individual y enrutador de HomeKit. Se registra por separado la versión exacta de Core utilizada en cada ejecución.
+- Corrección: 117 pruebas unitarias aprobadas en el entorno Python 3.12; nuevas regresiones cubren importación anidada, alta individual, sensores desconocidos, IDs altos, escalas y migración.
+- 17 pruebas con HA Core real y Python 3.14.2: incluyen contratos de entidades, comandos rechazados, WebSocket, flujo individual y enrutador de HomeKit. Se registra por separado la versión exacta de Core utilizada en cada ejecución.
 - Ruff (`--select F`), compilación Python y comprobación del diff.
 - Las dependencias de HomeKit/cámara se instalan para importar sus módulos reales, evitando considerar mocks de plataformas como validación de Core.
 
@@ -83,4 +84,4 @@ Fuentes: [TinyTuya en PyPI](https://pypi.org/pypi/tinytuya/json), [API de TinyTu
 5. Reconstruir/actualizar servicios del puente mediante sus controles existentes, conservando emparejamientos. Verificar en Casa órdenes y cambios de estado; no accionar cerraduras, alarmas, comederos o equipos de calor solo como prueba de conectividad.
 6. Probar reinicio y recuperación de red. Registrar dispositivos no accesibles por LAN y diferencias de esquema. La ausencia de lectura debe seguir visible como desconocido/no disponible.
 
-El cierre de la auditoría de código no equivale a confirmar funcionamiento físico de los 69 dispositivos ni a que la corrección esté publicada como release estable.
+El cierre de la auditoría de código no equivale a confirmar funcionamiento físico de los 59 dispositivos ni a que la corrección esté publicada como release estable.

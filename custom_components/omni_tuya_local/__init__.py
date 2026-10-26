@@ -92,7 +92,7 @@ SYNC_CLOUD_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_API_KEY, default=""): cv.string,
         vol.Optional(CONF_API_SECRET, default=""): cv.string,
-        vol.Optional(CONF_REGION, default=DEFAULT_REGION): cv.string,
+        vol.Optional(CONF_REGION): cv.string,
         vol.Optional(CONF_DEVICE_ID, default=""): cv.string,
     }
 )

@@ -10,6 +10,12 @@ from custom_components.omni_tuya_local.config_flow import OmniTuyaLocalConfigFlo
 CONFIG = {"device_id": "stable", "lan_device_id": "current", "host": "192.0.2.4", "local_key": "test-key", "version": "3.3", "domain": "switch", "device_type": "outlet"}
 
 
+def test_empty_cloud_sync_does_not_override_saved_region():
+    from custom_components.omni_tuya_local import SYNC_CLOUD_SCHEMA
+    assert "region" not in SYNC_CLOUD_SCHEMA({})
+    assert SYNC_CLOUD_SCHEMA({"region": "eu"})["region"] == "eu"
+
+
 def test_probe_keeps_numeric_schema_and_closes_socket():
     client = Mock()
     client.status.return_value = {"dps": {"101": True, "19": 0}}
