@@ -27,5 +27,10 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists; keeping its existing notes."
           else
-            gh release create "$GITHUB_REF_NAME" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file CHANGELOG.md
+            NOTES_FILE="RELEASE_NOTES_v${VERSION}.md"
+            if [ -f "$NOTES_FILE" ]; then
+              gh release create "$GITHUB_REF_NAME" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file "$NOTES_FILE"
+            else
+              gh release create "$GITHUB_REF_NAME" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file CHANGELOG.md
+            fi
           fi

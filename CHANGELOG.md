@@ -11,6 +11,9 @@
 - Amplía la redacción de secretos y evita sobrescribir el protocolo LAN verificado durante la sincronización Cloud.
 - Actualiza acciones de CI, incorpora análisis estático y pruebas con HA 2026.10.0/2026.10.4 y el enrutador real de HomeKit Bridge. TinyTuya permanece en 1.20.0, última versión publicada verificada.
 - Auditoría y límites pendientes: docs/AUDITORIA_TCP_LOCAL_2026-10-25.md. No implica validación con hardware ni despliegue en una instalación de Home Assistant.
+- Recupera candidatos de la subred local cuando falta una IP válida y verifica la clave local antes de guardar el host; las IP públicas del inventario Cloud no se usan para TCP.
+- Una prueba TCP válida publica los DPS y la disponibilidad al coordinador para que se creen o actualicen las entidades detectadas.
+- La extracción representa los datapoints observados y declarados por el dispositivo; no inventa sensores que el firmware o la clave local no entreguen.
 
 ## [1.11.11] - 2026-10-12
 
