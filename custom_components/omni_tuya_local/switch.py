@@ -4,16 +4,15 @@ import asyncio
 
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, HOMEKIT_SWITCH_TYPES
 from .coordinator import OmniTuyaLocalCoordinator
-from .dps import dps_label
+from .dps import control_channels, dps_label
 from .entity import OmniTuyaEntity
-from .pet_feeder import function_id, pet_feeder_feed
-from .util import max_gangs_for_device
+from .pet_feeder import pet_feeder_feed
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -48,7 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 def _first_valid_dps(entity: OmniTuyaEntity, *keys: str | int) -> Any:
     for k in keys:
         val = entity.dps(k)
-        if val is not None:
+        if val is not None and not isinstance(val, bool):
             return val
     return None
 
@@ -67,6 +66,8 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         # HomeKit type hint automático según device_type
         device_type = config.get("device_type") or ""
         self._homekit_type = HOMEKIT_SWITCH_TYPES.get(device_type, "switch")
+        if device_type in {"outlet", "power_strip"} or config.get("category") in {"cz", "pc"}:
+            self._attr_device_class = SwitchDeviceClass.OUTLET
 
     @property
     def name(self) -> str | None:
@@ -226,75 +227,10 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
         if predefined:
             return predefined
 
-    channels_dict: dict[str, str | None] = {}
-    dps_map = config.get("dps_map") or {}
-    tuya_functions = config.get("tuya_functions") or []
-    disc_dps = config.get("discovered_dps") or {}
     raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
     if not raw_dps and coordinator.devices.get(config.get("device_id")):
-        raw_dps = coordinator.devices[config.get("device_id")].dps
-
-    max_gangs = max_gangs_for_device(config, raw_dps)
-    allowed_gangs = {str(i) for i in range(1, max_gangs + 1)}
-
-    # 2. dps_map explícito (solo canales válidos según max_gangs)
-    for dps_id, desc in dps_map.items():
-        if str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
-            name = desc.get("name") if isinstance(desc, dict) else (desc if isinstance(desc, str) else None)
-            channels_dict[str(dps_id)] = name
-
-    # 3. tuya_functions (esquema de funciones desde Tuya Cloud)
-    for func in tuya_functions:
-        if not isinstance(func, dict):
-            continue
-        dp_id = function_id(func)
-        if not dp_id or not dp_id.isdigit() or dp_id not in allowed_gangs:
-            continue
-        code = str(func.get("code") or func.get("identifier") or "").lower().strip()
-        # Solo códigos de canal real (switch, switch_1..8, power, power_1..8, outlet, outlet_1..8).
-        # Ignorar configuraciones internas que empiezan con switch_ (ej. switch_backlight, switch_led, switch_inching).
-        is_switch_code = (
-            code in ("switch", "power", "outlet")
-            or any(code == f"{pfx}_{i}" for pfx in ("switch", "power", "outlet") for i in range(1, 9))
-        )
-        if is_switch_code:
-            name = func.get("name") or func.get("code")
-            if name:
-                name = str(name).replace("_", " ").strip().title()
-            if dp_id not in channels_dict or not channels_dict[dp_id]:
-                channels_dict[dp_id] = name
-
-    # 4. discovered_dps persistido en config (DPS booleanos observados en LAN dentro de allowed_gangs)
-    for dps_id, info in disc_dps.items():
-        if not str(dps_id).isdigit() or str(dps_id) not in allowed_gangs:
-            continue
-        if isinstance(info, dict) and info.get("kind") == "boolean":
-            if str(dps_id) not in channels_dict:
-                lbl = info.get("name")
-                channels_dict[str(dps_id)] = lbl if lbl and lbl != f"DPS {dps_id}" else None
-
-    # 5. raw_dps en vivo (auto-detectar canales booleanos activos en LAN dentro de allowed_gangs)
-    for dps_id, value in raw_dps.items():
-        if isinstance(value, bool) and str(dps_id).isdigit() and str(dps_id) in allowed_gangs:
-            if str(dps_id) not in channels_dict:
-                channels_dict[str(dps_id)] = None
-
-    # 6. Fallback al canal 1 si no se detectó nada
-    known_switch = (
-        config.get("domain") in ("switch", "light")
-        or device_type in ("switch", "outlet", "power_strip", "light")
-        or str(config.get("category") or "").lower() in ("cz", "kg", "pc", "sp", "tgkg", "tgq")
-    )
-    product_switch_ids = {
-        function_id(func)
-        for func in tuya_functions
-        if isinstance(func, dict)
-        and str(func.get("code") or func.get("identifier") or "").lower() in {"switch", "switch_1", "power", "power_1", "outlet", "outlet_1"}
-        and str(function_id(func)).isdigit()
-        and function_id(func)
-    }
-    if not channels_dict and known_switch and ("1" in raw_dps or "1" in disc_dps or "1" in product_switch_ids or 1 in raw_dps):
-        channels_dict["1"] = None
+        raw_dps = coordinator.devices[config["device_id"]].dps
+    channels_dict = control_channels(config, raw_dps, "switch")
 
     sorted_channels = sorted(channels_dict.items(), key=lambda item: int(item[0]))
 

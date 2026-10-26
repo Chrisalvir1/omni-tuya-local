@@ -253,12 +253,21 @@ async def async_fetch_cloud_devices(
 
             try:
                 functions = cloud.getfunctions(dev_id)
-                if isinstance(functions, dict):
-                    functions = functions.get("result", functions.get("functions", []))
-                if isinstance(functions, list):
-                    device["_omni_tuya_functions"] = functions
+                device["_omni_tuya_functions"] = _product_schema(functions)
             except Exception as err:
                 _LOGGER.debug("Could not fetch Tuya functions for %s: %s", dev_id, err)
+            try:
+                # Unlike /functions, /specifications includes numeric DP IDs
+                # and read-only telemetry. Never derive IDs by list position.
+                schema = _product_schema(cloud.getdps(dev_id))
+                existing = device.get("_omni_tuya_functions", [])
+                by_code = {item.get("code") or item.get("identifier"): item for item in existing}
+                for item in schema:
+                    code = item.get("code") or item.get("identifier")
+                    by_code[code] = {**by_code.get(code, {}), **item}
+                device["_omni_tuya_functions"] = list(by_code.values())
+            except Exception as err:
+                _LOGGER.debug("Could not fetch numeric Tuya DP schema for %s: %s", dev_id, err)
         return result
 
     raw_devices = await hass.async_add_executor_job(_sync_fetch)
@@ -305,6 +314,29 @@ async def async_fetch_cloud_devices(
             **feeder_mapping,
         })
     return formatted
+
+
+def _product_schema(payload: Any) -> list[dict[str, Any]]:
+    """Normalize nested TinyTuya/OpenAPI function and status specifications."""
+    if isinstance(payload, dict):
+        if "Error" in payload or "Err" in payload or payload.get("success") is False:
+            return []
+        payload = payload.get("result", payload)
+    if isinstance(payload, list):
+        return [dict(item) for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    functions = payload.get("functions") or []
+    statuses = payload.get("status") or []
+    by_code = {}
+    for item in statuses:
+        if isinstance(item, dict):
+            by_code[item.get("code") or item.get("identifier")] = {**item, "read_only": True}
+    for item in functions:
+        if isinstance(item, dict):
+            code = item.get("code") or item.get("identifier")
+            by_code[code] = {**by_code.get(code, {}), **item, "read_only": False}
+    return list(by_code.values())
 
 
 def _pet_feeder_mapping(functions: list[dict[str, Any]]) -> dict[str, Any]:

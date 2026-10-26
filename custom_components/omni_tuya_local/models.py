@@ -132,7 +132,7 @@ class TuyaDeviceConfig:
 
     @property
     def has_host(self) -> bool:
-        return bool(self.host and self.host.strip())
+        return bool(self.effective_host and self.effective_host.strip())
 
     @property
     def is_sub_device(self) -> bool:
@@ -320,7 +320,11 @@ def sanitize_device_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     is_door = any(w in text for w in ("puerta", "door", "门磁", "contact", "contacto", "apertura", "magnetic", "magnético", "magnetico")) or category in ("mcs", "cs")
     is_window = any(w in text for w in ("ventana", "window", "窗"))
 
-    if is_door or is_window:
+    # A location/name such as "Luz puerta" cannot override a known product
+    # category or the user's explicit actuator type/domain.
+    known_actuator = category in TUYA_CATEGORY_TO_DOMAIN and TUYA_CATEGORY_TO_DOMAIN[category] != "binary_sensor"
+    explicit_actuator = domain in {"light", "lock", "cover", "valve", "climate", "fan"} or dev_type in {"switch", "outlet", "power_strip", "light", "lock", "garage_door", "curtain", "valve"}
+    if (is_door or is_window) and not known_actuator and not explicit_actuator:
         if domain != "binary_sensor":
             updated["domain"] = "binary_sensor"
             changed = True
@@ -334,7 +338,6 @@ def sanitize_device_config(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
 
         # Cloud status exposes function codes, not numeric LAN DPS IDs. Never
         # synthesize numeric IDs or values from the device name/category.
-        init_dps = dict(updated.get("initial_dps") or {})
 
     return updated, changed
 

@@ -133,9 +133,8 @@ async def async_scan_network(
                 known
                 for known in registry_devices
                 if (
-                    known.get("device_id") == device["device_id"]
-                    or known.get("host") == ip
-                    or known.get("ip") == ip
+                    device["device_id"] in (known.get("device_id"), known.get("lan_device_id"), known.get("cloud_id"))
+                    or (device["device_id"].startswith("unknown_") and ip in (known.get("host"), known.get("ip")))
                     or (
                         _mac_token(known.get("mac"))
                         and _mac_token(known.get("mac")) == _mac_token(device.get("mac"))
@@ -186,7 +185,7 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
 
             sender_ip = addr[0]
             device_id = None
-            version = "3.3"
+            version = ""
             dps = None
 
             if payload is None:
@@ -222,7 +221,7 @@ class TuyaUDPListener(asyncio.DatagramProtocol):
                     or payload.get("deviceId")
                 )
                 sender_ip = payload.get("ip") or sender_ip
-                version = payload.get("version") or payload.get("ver") or "3.3"
+                version = payload.get("version") or payload.get("ver") or ""
                 dps = payload.get("dps")
                 if not dps and isinstance(payload.get("data"), dict) and "dps" in payload["data"]:
                     dps = payload["data"]["dps"]

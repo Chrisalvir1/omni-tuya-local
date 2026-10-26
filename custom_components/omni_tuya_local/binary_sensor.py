@@ -9,7 +9,8 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
-from .dps import discovered_dps
+from .dps import discovered_dps, product_dps
+from .pet_feeder import function_id
 from .entity import OmniTuyaEntity
 from .light import _light_dps
 from .switch import _switch_dps
@@ -106,10 +107,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     "water_leak_sensor", "smoke_sensor", "gas_sensor", "vibration_sensor"
                 )
                 or config.get("category") in ("mcs", "cs", "pir", "ywbj", "rqbj", "sjcj")
-                or any(
-                    w in f"{config.get('name', '')} {config.get('product_name', '')}".lower()
-                    for w in ("puerta", "door", "门磁", "ventana", "window", "apertura", "contact", "contacto", "magnetic")
-                )
             )
             if is_door_window_or_binary:
                 uid = f"{DOMAIN}_{config['device_id']}"
@@ -131,17 +128,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 dps_id for dps_id, _ in _light_dps(config, coordinator)
             } if device_domain == "light" else set()
 
-            for dps_id, info in discovered_dps(config).items():
+            for dps_id, info in {**product_dps(config), **discovered_dps(config)}.items():
                 if info["kind"] != "boolean":
                     continue
-                if is_door_window_or_binary and dps_id in ("1", "101", "102"):
+                if is_door_window_or_binary and dps_id == _primary_binary_dp(config):
                     continue
                 if dps_id in switch_dps_ids or dps_id in light_dps_ids:
-                    continue
-                if device_domain in {
-                    "switch", "light", "fan", "cover", "climate", "lock",
-                    "vacuum", "humidifier", "alarm_control_panel",
-                } and str(dps_id).isdigit() and int(dps_id) in range(1, 9):
                     continue
                 uid = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}_binary"
                 if uid not in _known_unique_ids:
@@ -164,6 +156,7 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: OmniTuyaLocalCoordinator, config: dict) -> None:
         super().__init__(coordinator, config, "1")
+        self.dps_id = _primary_binary_dp(config)
         # Determinar device_class: prioridad: config explícita > device_type > categoría > heurística por nombre
         explicit = config.get("device_class")
         if explicit and hasattr(BinarySensorDeviceClass, explicit.upper()):
@@ -193,7 +186,7 @@ class OmniTuyaBinarySensor(OmniTuyaEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         value = None
-        for alt in ("1", "101", "102", "103", "doorcontact_state", "is_open", "contact", "state"):
+        for alt in (self.dps_id,):
             val = self.dps(alt)
             if val is not None:
                 value = val
@@ -231,7 +224,7 @@ class OmniTuyaDiscoveredBinarySensor(OmniTuyaEntity, BinarySensorEntity):
         super().__init__(coordinator, config, dps_id)
         self._attr_unique_id = f"{DOMAIN}_{config['device_id']}_dps_{dps_id}_binary"
         self._attr_name = name
-        if str(dps_id) in ("4", "119") or any(w in name.lower() for w in ("tamper", "antisabotaje", "sabotaje")):
+        if any(w in name.lower() for w in ("tamper", "antisabotaje", "sabotaje")):
             self._attr_device_class = BinarySensorDeviceClass.TAMPER
 
     @property
@@ -242,6 +235,19 @@ class OmniTuyaDiscoveredBinarySensor(OmniTuyaEntity, BinarySensorEntity):
         return value is True or str(value).lower() in {
             "1", "true", "on", "open", "motion", "detected", "wet", "smoke", "gas", "alarm",
         }
+
+
+def _primary_binary_dp(config: dict) -> str:
+    codes = {"doorcontact_state", "pir", "presence_state", "presence", "smoke_sensor_state", "gas_sensor_state", "watersensor_state", "vibration"}
+    for function in config.get("tuya_functions") or []:
+        if isinstance(function, dict) and (function.get("code") or function.get("identifier")) in codes:
+            dp_id = function_id(function)
+            if dp_id:
+                return dp_id
+    for dp_id, desc in (config.get("dps_map") or {}).items():
+        if isinstance(desc, dict) and desc.get("platform") == "binary_sensor" and str(dp_id).isdigit():
+            return str(dp_id)
+    return "1"
 
 
 class OmniTuyaAlarmBinarySensor(OmniTuyaEntity, BinarySensorEntity):

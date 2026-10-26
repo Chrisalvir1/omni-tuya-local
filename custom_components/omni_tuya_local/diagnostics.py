@@ -19,6 +19,11 @@ TO_REDACT = {
     "access_secret",
     "cloud_secret",
     "gateway_local_key",
+    "key",
+    "localKey",
+    "localkey",
+    "access_token",
+    "refresh_token",
 }
 
 

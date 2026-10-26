@@ -114,7 +114,7 @@ class TuyaDeviceStore:
                         # but it must never discard local IP/discovery state or the
                         # user's persisted serving preference.
                         for key in (
-                            "name", "local_key", "version", "product_name", "product_id",
+                            "name", "local_key", "product_name", "product_id",
                             "category", "category_name", "tuya_functions",
                             "cloud_id", "uuid", "mac",
                             "initial_dps",
@@ -147,6 +147,10 @@ class TuyaDeviceStore:
         cloud_id = str(incoming.get("cloud_id") or "")
         if cloud_id in self._devices:
             return cloud_id
+        aliases = {value for value in (direct_id, cloud_id) if value}
+        matches = [stored_id for stored_id, stored in self._devices.items() if aliases.intersection({stored.get("lan_device_id"), stored.get("cloud_id")})]
+        if len(matches) == 1:
+            return matches[0]
 
         # A factory reset/account transfer may assign a new cloud ID and local
         # key to the same physical device. Match by UUID or MAC, in that order;

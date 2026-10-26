@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import json
 import math
 
@@ -37,7 +39,7 @@ except (ImportError, AttributeError):
 
 from .const import DOMAIN
 from .coordinator import OmniTuyaLocalCoordinator
-from .dps import discovered_dps, dps_label
+from .dps import discovered_dps, dps_label, product_dps
 from .entity import OmniTuyaEntity
 
 # ── Mapeo device_type/category → (SensorDeviceClass, unit, state_class) ──────
@@ -92,6 +94,18 @@ _ROBOT_VACUUM_DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None
 }
 
 from .pet_feeder import function_id
+
+
+def _function_descriptor(function: dict) -> dict:
+    values = function.get("values") or {}
+    if isinstance(values, str):
+        try:
+            values = json.loads(values)
+        except (TypeError, ValueError):
+            values = {}
+    unit = values.get("unit") if isinstance(values, dict) else None
+    unit = {"℃": "°C", "℉": "°F", "percent": "%", "w": "W", "v": "V"}.get(unit, unit)
+    return {"name": str(function.get("name") or function.get("code") or "").replace("_", " ").strip().title(), "code": function.get("code") or function.get("identifier"), "type": function.get("type"), "unit": unit}
 
 _DPS_PROFILES: dict[str, tuple[SensorDeviceClass | None, str | None, SensorStateClass | None]] = {
     # Telemetría estándar consumo tomacorrientes / interruptores inteligentes (cz, pc, sp)
@@ -157,6 +171,14 @@ for _base_code, _profile in tuple(_EXTENDED_ELECTRICAL_CODES.items()):
     for _channel in range(1, 5):
         _EXTENDED_ELECTRICAL_CODES[f"{_base_code}_{_channel}"] = _profile
 _DPS_PROFILES.update(_EXTENDED_ELECTRICAL_CODES)
+for _alias, _canonical in {
+    "temp_current": "temperature", "va_temperature": "temperature",
+    "humidity_value": "humidity", "va_humidity": "humidity",
+    "electricity_left": "battery", "va_battery": "battery",
+    "illuminance_value": "illuminance", "bright_value": "illuminance",
+    "co2_value": "co2", "pm25_value": "pm25",
+}.items():
+    _DPS_PROFILES[_alias] = _DPS_PROFILES[_canonical]
 
 
 def _is_reported_numeric(raw_dps: dict[str, Any], dp_id: str) -> bool:
@@ -263,33 +285,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if is_door_window_or_binary:
                 config = {**config, "is_door_window_sensor": True}
 
-            # Un interruptor o apagador de pared físico nunca debe generar entidades de sensores
-            is_wall_switch = (
-                cat in ("kg", "tgkg", "tgq")
-                or dev_type in ("switch", "wall_switch")
-                or config.get("domain") == "switch"
-                or any(w in text for w in (
-                    "apagador", "wall switch", "interruptor", "cb01", "cb02", "cb03", "cb04",
-                    "ts0001", "ts0002", "ts0003", "ts0004", "triple", "doble", "quad", "gang"
-                ))
-            )
-            if is_wall_switch:
-                continue
-
-            # Para otros interruptores (plugs) y luces, excluir DPs que son canales de control (1..8)
-            # y funciones de temporizador/control interno (7..16, 21..26, 38..40)
-            is_switch_or_light = (
-                config.get("domain") in ("switch", "light")
-                or dev_type in ("switch", "outlet", "power_strip", "light")
-                or cat in ("kg", "tgkg", "tgq")
-            )
+            # A primary switch domain does not forbid read-only telemetry.
+            # Keep every observed DP; only boolean channels belong elsewhere.
             excluded_dps: set[str] = set()
-            if is_switch_or_light:
-                for i in range(1, 9):
-                    excluded_dps.add(str(i))
-                excluded_dps |= {
-                    "7", "8", "9", "10", "11", "12", "14", "15", "16", "21", "22", "23", "24", "25", "26", "38", "39", "40"
-                }
 
             raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
             if not raw_dps and coordinator.devices.get(config.get("device_id")):
@@ -308,6 +306,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 if not dps_id.isdigit() or dps_id in excluded_dps:
                     continue
                 descriptor = desc if isinstance(desc, dict) else {}
+                if descriptor.get("platform") and descriptor["platform"] != "sensor":
+                    continue
                 desc_code = str(descriptor.get("code") or "").lower()
                 if not _is_extended_profile_reported(desc_code, raw_dps, dps_id):
                     continue
@@ -334,12 +334,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     continue
                 code = str(func.get("code") or func.get("identifier") or "").lower()
                 func_type = str(func.get("type") or "").lower()
-                if dp_id not in raw_dps and (not dp_id.isdigit() or int(dp_id) not in raw_dps):
-                    continue
                 is_sensor_func = (
                     code in _DPS_PROFILES
                     or any(k in code for k in ("power", "voltage", "current", "energy", "temp", "hum", "co2", "pm25", "lux", "battery"))
                     or func_type in ("integer", "value", "numeric")
+                    or (func.get("read_only") and func_type in ("enum", "string"))
                 )
                 if is_sensor_func and not code.startswith("switch") and code not in ("mode", "count_down"):
                     configured_dps.add(dp_id)
@@ -350,7 +349,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                         _known_unique_ids.add(uid)
                         entities.append(
                             OmniTuyaSensor(
-                                coordinator, config, dp_id, {"name": name, "code": code}
+                                coordinator, config, dp_id, {**_function_descriptor(func), "name": name, "code": code}
                             )
                         )
 
@@ -362,7 +361,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     ("18", "Corriente", "cur_current"),
                     ("17", "Energía", "add_ele"),
                 ):
-                    if energy_dp not in configured_dps:
+                    if energy_dp not in configured_dps and (
+                        _is_reported_numeric(raw_dps, energy_dp)
+                        or discovered_dps(config).get(energy_dp, {}).get("kind") == "number"
+                    ):
                         configured_dps.add(energy_dp)
                         uid = f"{DOMAIN}_{config['device_id']}_{energy_dp}"
                         if uid not in _known_unique_ids:
@@ -401,7 +403,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                             )
 
             # 5. Todos los valores numéricos/texto observados en LAN (discovered_dps)
-            for dps_id, info in discovered_dps(config).items():
+            for dps_id, info in {**product_dps(config), **discovered_dps(config)}.items():
                 if info["kind"] not in {"number", "text"} or dps_id in configured_dps or dps_id in excluded_dps:
                     continue
                 configured_dps.add(dps_id)
@@ -455,9 +457,15 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             ))
         )
         named_battery = any(word in desc_text for word in ("battery", "batería", "bateria"))
-        if named_battery or (str(dps_id) == "2" and contact_device):
+        if str(desc.get("type") or "").lower() in {"enum", "string"} or discovered_dps(config).get(str(dps_id), {}).get("kind") == "text":
+            self._attr_device_class = None
+            self._attr_native_unit_of_measurement = None
+            self._attr_state_class = None
+            return
+        has_product_mapping = any(isinstance(func, dict) and function_id(func) == str(dps_id) for func in config.get("tuya_functions") or [])
+        if named_battery or (str(dps_id) == "2" and contact_device and not desc.get("code") and not has_product_mapping):
             self._attr_device_class = SensorDeviceClass.BATTERY
-            self._attr_native_unit_of_measurement = PERCENTAGE
+            self._attr_native_unit_of_measurement = desc.get("unit") or PERCENTAGE
             self._attr_state_class = SensorStateClass.MEASUREMENT
             return
 
@@ -509,7 +517,7 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             return
 
         # 4. Perfil basado en device_type del config
-        if device_type in _SENSOR_PROFILES:
+        if str(dps_id) == "1" and device_type in _SENSOR_PROFILES:
             dc, unit, sc = _SENSOR_PROFILES[device_type]
             self._attr_device_class = dc
             self._attr_native_unit_of_measurement = explicit_unit or unit
@@ -519,7 +527,7 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
         # 5. Perfil basado en categoría Tuya
         category = (config.get("category") or "").lower()
         profile_key = _CATEGORY_PROFILES.get(category)
-        if profile_key and profile_key in _SENSOR_PROFILES:
+        if str(dps_id) == "1" and profile_key and profile_key in _SENSOR_PROFILES:
             dc, unit, sc = _SENSOR_PROFILES[profile_key]
             self._attr_device_class = dc
             self._attr_native_unit_of_measurement = explicit_unit or unit
@@ -616,7 +624,7 @@ class OmniTuyaSensor(OmniTuyaEntity, SensorEntity):
             return None
 
         desc_code = str(self._desc.get("code") or "").lower()
-        if desc_code in _EXTENDED_ELECTRICAL_CODES:
+        if _reported_scale(self.config, str(self.dps_id), self._desc) is not None or desc_code in _EXTENDED_ELECTRICAL_CODES:
             try:
                 numeric = float(value)
                 scale = _reported_scale(self.config, str(self.dps_id), self._desc)

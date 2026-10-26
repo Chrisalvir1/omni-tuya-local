@@ -20,9 +20,6 @@ class OmniTuyaEntity(CoordinatorEntity[OmniTuyaLocalCoordinator]):
         unique_suffix = "" if self.dps_id == "1" else f"_{self.dps_id}"
         self._attr_unique_id = f"{DOMAIN}_{self.device_id}{unique_suffix}"
 
-        device_type = config.get("device_type") or "generic"
-        type_meta = DEVICE_TYPES.get(device_type, DEVICE_TYPES["generic"])
-
         self._device_info_config = config
 
     @property

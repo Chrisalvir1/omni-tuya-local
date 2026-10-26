@@ -1,3 +1,17 @@
+## [1.12.0] - 2026-10-25
+
+- Corrige el alta individual después de seleccionar un dispositivo Cloud: conserva en el inventario la IP/protocolo finales y el esquema DPS leído por TCP.
+- Importa respuestas anidadas de funciones y especificaciones con IDs numéricos, incluidos sensores de solo lectura. Los estados siguen proviniendo de LAN.
+- Conserva todos los DPS observados y permite canales con IDs propios del producto, incluidos 20, 101 y 105; elimina filtros globales que ocultaban sensores de enchufes e interruptores.
+- Reconoce luces con DPS 20–24 y evita interpretar un segundo canal booleano como brillo.
+- Recarga las entradas ya enlazadas tras sincronizar metadatos, aplica la clase nativa outlet y migra identificadores de un único canal inequívoco sin cambiar su entity_id.
+- Restringe la limpieza al dominio primario anterior de la propia entrada. Conserva sensores, helpers y entidades de otras entradas.
+- Respeta escalas/unidades declaradas por el producto, mantiene enumeraciones como texto y evita reclasificar actuadores por palabras de ubicación como puerta.
+- Corrige host de gateway, invalidación de sus credenciales, respuestas vacías, solicitudes DPS de productos no estándar y clasificación de sensores de presencia alimentados.
+- Amplía la redacción de secretos y evita sobrescribir el protocolo LAN verificado durante la sincronización Cloud.
+- Actualiza acciones de CI, incorpora análisis estático y pruebas con HA 2026.10.0/2026.10.4 y el enrutador real de HomeKit Bridge. TinyTuya permanece en 1.20.0, última versión publicada verificada.
+- Auditoría y límites pendientes: docs/AUDITORIA_TCP_LOCAL_2026-10-25.md. No implica validación con hardware ni despliegue en una instalación de Home Assistant.
+
 ## [1.11.11] - 2026-10-12
 
 - Incluye la reparación comprobada del WebSocket de cámara y conserva la inferencia de batería y estadísticas de la versión instalada 1.11.8.

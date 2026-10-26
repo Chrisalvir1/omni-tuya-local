@@ -10,6 +10,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .models import TuyaDeviceConfig
+from .dps import query_dps_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,8 +79,6 @@ class OmniTuyaDevice:
             return True
         if self.config.category in ("mcs", "cs", "pir", "sjcj", "ywbj", "rqbj", "szj", "sos"):
             return True
-        if self.config.domain == "binary_sensor" and self.config.device_type != "generic":
-            return True
         return False
 
     @property
@@ -126,6 +125,7 @@ class OmniTuyaDevice:
         old_version = self.config.version
         old_local_key = self.config.local_key
         old_device_type = self.config.device_type
+        old_gateway = (self.config.gateway_host, self.config.gateway_local_key, self.config.gateway_id, self.config.node_id)
         
         self.config = TuyaDeviceConfig.from_dict(config)
         
@@ -134,6 +134,7 @@ class OmniTuyaDevice:
             or self.config.lan_device_id != old_lan_device_id
             or self.config.version != old_version
             or self.config.local_key != old_local_key
+            or old_gateway != (self.config.gateway_host, self.config.gateway_local_key, self.config.gateway_id, self.config.node_id)
         ):
             # IP, versión o local key cambió — invalidar cliente para forzar reconexión
             stale_client = self._tuya
@@ -185,8 +186,8 @@ class OmniTuyaDevice:
                 version=float(effective_version),
             )
             parent.set_socketPersistent(False)
-            parent.set_socketTimeout(5.0)
-            parent.set_socketRetryLimit(3)
+            parent.set_socketTimeout(3.0)
+            parent.set_socketRetryLimit(1)
             device = tinytuya.Device(
                 dev_id=self.config.lan_device_id or self.device_id,
                 cid=self.config.node_id,
@@ -219,29 +220,33 @@ class OmniTuyaDevice:
         """Llamada síncrona a tinytuya.status(). Retorna dps o None."""
         device = self._get_or_build_tuya()
         raw = device.status()
-        if raw and isinstance(raw, dict) and "dps" in raw and raw["dps"]:
+        if self._status_dps(raw):
             self._last_error_detail = ""
             return dict(raw["dps"])
 
         # Fallback para enchufes/tomacorrientes que no responden a DP_QUERY (cmd 10)
         try:
-            upd = device.updatedps([1, 2, 9, 17, 18, 19, 20])
-            if upd and isinstance(upd, dict) and "dps" in upd and upd["dps"]:
+            upd = device.updatedps(query_dps_ids(self.config.as_dict()))
+            if self._status_dps(upd):
                 self._last_error_detail = ""
                 return dict(upd["dps"])
         except Exception:
             pass
 
         if raw and isinstance(raw, dict):
-            if "dps" in raw:
-                self._last_error_detail = ""
-                return dict(raw["dps"])
             self._last_error_detail = self._response_error(raw)
             _LOGGER.debug("Tuya device %s status returned no dps: %s", self.device_id, self._last_error_detail)
         else:
             self._last_error_detail = "No usable LAN state response"
             _LOGGER.debug("Tuya device %s status returned empty response: %s", self.device_id, self._last_error_detail)
         return None
+
+    @staticmethod
+    def _status_dps(raw: Any) -> bool:
+        return (
+            isinstance(raw, dict) and "Error" not in raw and not raw.get("Err")
+            and isinstance(raw.get("dps"), dict) and bool(raw["dps"])
+        )
 
     def _mark_online(self) -> None:
         was_unavailable = not self._available
@@ -366,7 +371,7 @@ class OmniTuyaDevice:
         candidate = self._build_tuya(version)
         try:
             raw = candidate.status()
-            if isinstance(raw, dict) and isinstance(raw.get("dps"), dict) and raw["dps"]:
+            if self._status_dps(raw):
                 return dict(raw["dps"])
             return None
         finally:
@@ -401,7 +406,7 @@ class OmniTuyaDevice:
                 try:
                     dps = await asyncio.wait_for(
                         self.hass.async_add_executor_job(self._sync_status),
-                        timeout=1.0,
+                        timeout=_TUYA_TIMEOUT,
                     )
                     if dps is not None:
                         self._mark_online()
@@ -651,7 +656,9 @@ class OmniTuyaDevice:
                 while self._listening and not self._push_reconnect_requested.is_set():
                     try:
                         data = listener.receive()
-                        if data and isinstance(data, dict) and "dps" in data:
+                        if isinstance(data, dict) and ("Error" in data or data.get("Err")):
+                            break  # TinyTuya usually returns errors instead of raising.
+                        if self._status_dps(data):
                             dps = data["dps"]
                             self.hass.loop.call_soon_threadsafe(self._apply_push_dps, dps)
                     except Exception as err:

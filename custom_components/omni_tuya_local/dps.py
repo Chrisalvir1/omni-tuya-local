@@ -8,6 +8,7 @@ Cloud product functions are used only to improve the label when available.
 from __future__ import annotations
 
 from typing import Any
+import math
 
 from .pet_feeder import function_id
 
@@ -74,7 +75,7 @@ def dps_kind(value: Any) -> str | None:
     """Return the Home Assistant-safe kind for an observed DPS value."""
     if isinstance(value, bool):
         return "boolean"
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
         return "number"
     if isinstance(value, str) and len(value) <= 255:
         return "text"
@@ -128,7 +129,10 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
         if standard_label:
             return standard_label
 
-    if dps_id in _ENERGY_DPS_LABELS:
+    if dps_id in _ENERGY_DPS_LABELS and (
+        dev_type in ("switch", "outlet", "power_strip")
+        or cat in ("kg", "tgkg", "cz", "pc", "sp", "dlq", "tdq")
+    ):
         return _ENERGY_DPS_LABELS[dps_id]
 
     return f"DPS {dps_id}"
@@ -136,21 +140,7 @@ def dps_label(config: dict[str, Any], dps_id: str | int) -> str:
 
 def discovered_dps(config: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Return persisted LAN DPS schema, normalizing older stored data."""
-    from .util import max_gangs_for_device
-
     result: dict[str, dict[str, str]] = {}
-    max_gangs = max_gangs_for_device(config)
-    dev_type = str(config.get("device_type") or "").lower()
-    cat = str(config.get("category") or "").lower()
-    is_switch_or_light = (
-        config.get("domain") in ("switch", "light")
-        or dev_type in ("switch", "outlet", "power_strip", "light")
-        or cat in ("kg", "tgkg", "tgq")
-    )
-    _internal_control_dps = {
-        "7", "8", "9", "10", "11", "12", "14", "15", "16",
-        "21", "22", "23", "24", "25", "26", "38", "39", "40",
-    }
 
     for dps_id, info in (config.get("discovered_dps") or {}).items():
         if not str(dps_id).isdigit() or not isinstance(info, dict):
@@ -158,11 +148,6 @@ def discovered_dps(config: dict[str, Any]) -> dict[str, dict[str, str]]:
         kind = info.get("kind")
         if kind not in {"boolean", "number", "text"}:
             continue
-        if is_switch_or_light:
-            if kind == "boolean" and int(dps_id) > max_gangs:
-                continue
-            if str(dps_id) in _internal_control_dps:
-                continue
         result[str(dps_id)] = {
             "kind": kind,
             "name": str(info.get("name") or dps_label(config, dps_id)),
@@ -172,21 +157,6 @@ def discovered_dps(config: dict[str, Any]) -> dict[str, dict[str, str]]:
 
 def schema_from_dps(config: dict[str, Any], values: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Build the safe, persisted schema from an actual local status payload."""
-    from .util import max_gangs_for_device
-
-    max_gangs = max_gangs_for_device(config)
-    dev_type = str(config.get("device_type") or "").lower()
-    cat = str(config.get("category") or "").lower()
-    is_switch_or_light = (
-        config.get("domain") in ("switch", "light")
-        or dev_type in ("switch", "outlet", "power_strip", "light")
-        or cat in ("kg", "tgkg", "tgq")
-    )
-    _internal_control_dps = {
-        "7", "8", "9", "10", "11", "12", "14", "15", "16",
-        "21", "22", "23", "24", "25", "26", "38", "39", "40",
-    }
-
     schema = discovered_dps(config)
     for dps_id, value in values.items():
         dps_id = str(dps_id)
@@ -195,11 +165,83 @@ def schema_from_dps(config: dict[str, Any], values: dict[str, Any]) -> dict[str,
         kind = dps_kind(value)
         if not kind:
             continue
-        if is_switch_or_light:
-            if kind == "boolean" and int(dps_id) > max_gangs:
-                continue
-            if dps_id in _internal_control_dps:
-                continue
         schema[dps_id] = {"kind": kind, "name": dps_label(config, dps_id)}
     return schema
+
+
+def control_channels(config: dict[str, Any], raw_dps: dict[str, Any], platform: str) -> dict[str, str | None]:
+    """Resolve product-specific control IDs before conventional 1..N channels.
+
+    A channel number (switch_1) is not a DP ID (which may be 101). Unknown
+    booleans remain read-only; merely discovering one never grants writes.
+    """
+    from .util import max_gangs_for_device
+
+    channels: dict[str, str | None] = {}
+    prefixes = ("switch", "power", "light", "led") if platform == "light" else ("switch", "power", "outlet")
+    codes = set(prefixes)
+    codes.update(f"{prefix}_{i}" for prefix in prefixes for i in range(1, 9))
+    if platform == "light":
+        codes.add("switch_led")
+    for func in config.get("tuya_functions") or []:
+        if not isinstance(func, dict):
+            continue
+        dp_id = function_id(func)
+        code = str(func.get("code") or func.get("identifier") or "").lower()
+        if dp_id and dp_id.isdigit() and code in codes and not func.get("read_only"):
+            channels[dp_id] = dps_label(config, dp_id)
+
+    for dp_id, desc in (config.get("dps_map") or {}).items():
+        dp_id = str(dp_id)
+        if not dp_id.isdigit():
+            continue
+        if isinstance(desc, dict):
+            target = desc.get("platform")
+            code = desc.get("code") or desc.get("semantic")
+            if target and target != platform:
+                continue
+            if not target and code and code not in codes:
+                continue
+            if not target and any(key in desc for key in ("unit", "device_class", "scale", "options")):
+                continue
+            channels[dp_id] = desc.get("name")
+        elif isinstance(desc, str) and desc not in {"brightness", "color_temp", "hsv", "mode"}:
+            channels[dp_id] = desc
+
+    if channels:
+        return channels
+    observed = discovered_dps(config)
+    for i in range(1, max_gangs_for_device(config, raw_dps) + 1):
+        dp_id = str(i)
+        value = raw_dps.get(dp_id, raw_dps.get(i))
+        info = observed.get(dp_id, {})
+        if isinstance(value, bool) or info.get("kind") == "boolean":
+            name = info.get("name")
+            channels[dp_id] = name if name and name != f"DPS {dp_id}" else None
+    # Common RGB firmware uses power DP 20. Do not manufacture DP 1 for it.
+    if platform == "light" and not channels:
+        if isinstance(raw_dps.get("20"), bool) or observed.get("20", {}).get("kind") == "boolean":
+            channels["20"] = None
+    return channels
+
+
+def product_dps(config: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Describe authoritative product IDs without claiming LAN observations."""
+    kinds = {"bool": "boolean", "boolean": "boolean", "integer": "number", "value": "number", "numeric": "number", "enum": "text", "string": "text"}
+    result = {}
+    for func in config.get("tuya_functions") or []:
+        if not isinstance(func, dict):
+            continue
+        dp_id = function_id(func)
+        kind = kinds.get(str(func.get("type") or "").lower())
+        if dp_id and kind:
+            result[dp_id] = {"kind": kind, "name": dps_label(config, dp_id)}
+    return result
+
+
+def query_dps_ids(config: dict[str, Any]) -> list[int]:
+    """Request known product IDs, without probing arbitrary writable values."""
+    ids = set(product_dps(config)) | set(discovered_dps(config))
+    ids.update(str(key) for key in (config.get("dps_map") or {}) if str(key).isdigit())
+    return sorted(int(key) for key in ids) or [1, 2, 9, 17, 18, 19, 20]
 
