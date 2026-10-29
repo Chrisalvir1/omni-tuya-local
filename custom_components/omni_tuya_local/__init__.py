@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.components import websocket_api
 from homeassistant.helpers import entity_registry as er
 
+from .camera_webrtc import async_allocate_webrtc
 from .cloud import async_allocate_camera_stream, async_fetch_cloud_devices
 from .const import (
     CONF_API_KEY,
@@ -124,6 +125,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     _async_register_camera_stream_websocket(hass)
+    _async_register_camera_webrtc_websocket(hass)
     async_migrate_primary_entity_ids(hass, coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _async_register_services(hass, entry.entry_id)
@@ -219,6 +221,41 @@ async def _async_fresh_camera_url(hass: HomeAssistant, entity_id: str) -> str:
             config.get("cloud_id") or device_id,
         )
     raise ValueError("Omni Tuya camera not found")
+
+
+def _async_register_camera_webrtc_websocket(hass: HomeAssistant) -> None:
+    if hass.data.get(DOMAIN, {}).get("_camera_webrtc_websocket_registered"):
+        return
+
+    @websocket_api.websocket_command({
+        vol.Required("type"): "omni_tuya_local/camera_webrtc",
+        vol.Required("entity_id"): cv.entity_id,
+    })
+    @websocket_api.require_admin
+    @websocket_api.async_response
+    async def handle_camera_webrtc(hass: HomeAssistant, connection, msg):
+        entry = er.async_get(hass).async_get(msg["entity_id"])
+        prefix, suffix = f"{DOMAIN}_", "_camera"
+        if entry is None or entry.domain != "camera" or entry.platform != DOMAIN or not entry.unique_id.startswith(prefix) or not entry.unique_id.endswith(suffix):
+            connection.send_error(msg["id"], "not_found", "Omni camera not found")
+            return
+        device_id = entry.unique_id[len(prefix):-len(suffix)]
+        for coordinator in hass.data.get(DOMAIN, {}).values():
+            if not isinstance(coordinator, OmniTuyaLocalCoordinator):
+                continue
+            config = coordinator.get_device_config(device_id)
+            if not config:
+                continue
+            try:
+                bundle = await async_allocate_webrtc(hass, coordinator.store.cloud_config or {}, config.get("cloud_id") or device_id)
+                connection.send_result(msg["id"], bundle)
+            except Exception:
+                connection.send_error(msg["id"], "webrtc_unavailable", "Tuya WebRTC session could not be allocated")
+            return
+        connection.send_error(msg["id"], "not_found", "Omni camera not found")
+
+    websocket_api.async_register_command(hass, handle_camera_webrtc)
+    hass.data.setdefault(DOMAIN, {})["_camera_webrtc_websocket_registered"] = True
 
 
 def _async_register_camera_stream_websocket(hass: HomeAssistant) -> None:
