@@ -1,3 +1,9 @@
+## [1.12.2] - 2026-10-29
+
+- Añade un comando WebSocket de administrador para obtener capacidades WebRTC y una configuración de señalización temporal por cámara Tuya.
+- Solo habilita el retorno de audio cuando Tuya confirma ambos indicadores de audio bidireccional; no guarda ni registra credenciales WebRTC/MQTT.
+- Prueba la asignación con Home Assistant y los decoradores reales del WebSocket; el audio audible en el altavoz físico sigue pendiente de confirmación.
+
 ## [1.12.1] - 2026-10-26
 
 - Identifica Robotina `A1-ROPVACNIC` como aspiradora RVC aunque Tuya Cloud omita la categoría `sd`, usando también el modelo OEM anidado en la respuesta original.
