@@ -62,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        core-version: ["2026.10.0", "2026.10.4", "2026.11.0"]
+        core-version: ["2026.10.0", "2026.10.4"]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0

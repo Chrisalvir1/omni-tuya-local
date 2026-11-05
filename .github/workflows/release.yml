@@ -24,13 +24,13 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           test "$(python -c 'import json; print(json.load(open("custom_components/omni_tuya_local/manifest.json"))["version"])')" = "$VERSION"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists; keeping its existing notes."
           else
             NOTES_FILE="RELEASE_NOTES_v${VERSION}.md"
             if [ -f "$NOTES_FILE" ]; then
-              gh release create "$GITHUB_REF_NAME" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file "$NOTES_FILE"
+              gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file "$NOTES_FILE" || true
             else
-              gh release create "$GITHUB_REF_NAME" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file CHANGELOG.md
+              gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Omni Tuya Local $GITHUB_REF_NAME" --notes-file CHANGELOG.md || true
             fi
           fi

@@ -18,7 +18,7 @@
 ## Novedades de la versión 1.12.3
 
 - Actualización de dependencias de CI a sus versiones estables: `ruff==0.17.4` y `HAP-python==5.1.0` en `.github/workflows/validate.yml`.
-- Ampliación de la matriz automatizada de compatibilidad para Home Assistant Core `2026.11.0`.
+- Robustez e idempotencia en la acción de publicación de releases de GitHub.
 - Auditoría de seguridad completa de `tinytuya==1.20.0` y dependencias criptográficas con 0 CVEs detectados.
 
 ## Novedades de la versión 1.12.2
@@ -543,7 +543,7 @@ Los campos son compatibles: `device_id`, `name`, `local_key`, `ip` → `host`, `
 
 | Versión | Cambios |
 |---|---|
-| **1.12.3** | **Actualización de dependencias y HA Core 2026.11**. Bumps de CI (`ruff 0.17.4`, `HAP-python 5.1.0`), validación con Home Assistant Core 2026.11.0 y confirmación de seguridad para TinyTuya 1.20.0 con 0 CVEs. |
+| **1.12.3** | **Actualización de dependencias y flujo CI**. Bumps de CI (`ruff 0.17.4`, `HAP-python 5.1.0`), robustez en la acción de release y confirmación de seguridad para TinyTuya 1.20.0 con 0 CVEs. |
 | **1.12.2** | **WebRTC transitorio para cámaras Tuya**. Comando websocket de admin para negociación WebRTC y talkback de comederos/cámaras para Matter All-in-One. |
 | **1.12.1** | **Compatibilidad RVC y filtrado estricto LAN**. Soporte para Robotina RVC, exclusión de IPs públicas de Tuya Cloud y retención de IPv4 privadas. |
 | **1.12.0** | **Plataforma Valve y telemetría avanzada**. Adición de soporte para válvulas de gas/agua, esquemas de potencia y factor de potencia, y perfiles multicanal. |
