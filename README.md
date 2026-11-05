@@ -9,11 +9,32 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-1.11.7-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-1.12.3-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
+
+## Novedades de la versión 1.12.3
+
+- Actualización de dependencias de CI a sus versiones estables: `ruff==0.17.4` y `HAP-python==5.1.0` en `.github/workflows/validate.yml`.
+- Ampliación de la matriz automatizada de compatibilidad para Home Assistant Core `2026.11.0`.
+- Auditoría de seguridad completa de `tinytuya==1.20.0` y dependencias criptográficas con 0 CVEs detectados.
+
+## Novedades de la versión 1.12.2
+
+- Añade el comando WebSocket de administrador `omni_tuya_local/camera_webrtc` para cámaras Tuya y comederos compatibles (utilizado por Matter All-in-One).
+- Permite señalización y capacidades WebRTC temporales de audio bidireccional; credenciales efímeras sin persistencia en disco ni logs.
+
+## Novedades de la versión 1.12.1
+
+- Identifica aspiradoras Robotina `A1-ROPVACNIC` como categoría RVC aunque la nube omita la categoría estándar `sd`.
+- Protege los DPS numéricos de tiempo/fallo y elimina controles fantasma. Validación estricta de direcciones IPv4 privadas para transporte LAN TCP.
+
+## Novedades de la versión 1.12.0
+
+- Soporte nativo para la plataforma de válvulas (`valve`) con apertura/cierre local por DPS.
+- Mapeo de magnitudes eléctricas avanzadas (potencia reactiva, factor de potencia, voltaje) y soporte de canales multicanal.
 
 ## Novedades de la versión 1.11.7
 
@@ -183,6 +204,52 @@ El motor realiza:
 3. **TCP sweep** del segmento de red en el puerto `6668` (hasta /50 hilos simultáneos)
 
 Los dispositivos encontrados se cruzan con el registro y se actualiza su IP automáticamente si el `device_id` coincide.
+
+---
+
+## Configuración en YAML (`configuration.yaml`)
+
+Aunque Omni Tuya Local se gestiona principalmente mediante el flujo visual (UI) de Home Assistant, puedes configurar opciones avanzadas de diagnóstico y automatización en tus archivos YAML:
+
+### Habilitar Registro y Diagnóstico Detallado (Logger)
+Para depurar conexiones TCP directas, descubrimiento UDP y eventos de protocolo Tuya en tu archivo `configuration.yaml`:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.omni_tuya_local: debug
+    tinytuya: info
+```
+
+### Automatizaciones y Scripts con Acciones de Omni Tuya Local
+En Home Assistant moderno (HA 2024.8+ y posteriores) se utiliza la clave `action:` (totalmente compatible con la sintaxis tradicional `service:`):
+
+#### Escaneo periódico automático de IPs:
+```yaml
+automation:
+  - alias: "Omni Tuya - Escaneo de Red Periódico"
+    trigger:
+      - platform: time_pattern
+        hours: "/6"
+    action:
+      - action: omni_tuya_local.scan_network
+```
+
+#### Actualización dinámica de IP para un dispositivo:
+```yaml
+automation:
+  - alias: "Omni Tuya - Actualizar IP de Dispositivo"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.enchufe_sala_conectado
+        to: "on"
+    action:
+      - action: omni_tuya_local.set_device_ip
+        data:
+          device_id: "bf1234567890abcdef"
+          host: "192.168.1.105"
+```
 
 ---
 
@@ -476,6 +543,10 @@ Los campos son compatibles: `device_id`, `name`, `local_key`, `ip` → `host`, `
 
 | Versión | Cambios |
 |---|---|
+| **1.12.3** | **Actualización de dependencias y HA Core 2026.11**. Bumps de CI (`ruff 0.17.4`, `HAP-python 5.1.0`), validación con Home Assistant Core 2026.11.0 y confirmación de seguridad para TinyTuya 1.20.0 con 0 CVEs. |
+| **1.12.2** | **WebRTC transitorio para cámaras Tuya**. Comando websocket de admin para negociación WebRTC y talkback de comederos/cámaras para Matter All-in-One. |
+| **1.12.1** | **Compatibilidad RVC y filtrado estricto LAN**. Soporte para Robotina RVC, exclusión de IPs públicas de Tuya Cloud y retención de IPv4 privadas. |
+| **1.12.0** | **Plataforma Valve y telemetría avanzada**. Adición de soporte para válvulas de gas/agua, esquemas de potencia y factor de potencia, y perfiles multicanal. |
 | **0.5.61** | **Soporte completo ROPVACNIC / Tuya categoría `sd` (Robot Aspirador)**. Mapeo nativo de DPS (DPS 2 `power_go`, DPS 3 `mode`, DPS 4 `direction_control`, DPS 5 `status`, DPS 6 batería, DPS 7/8/9 vida de cepillos/filtro, DPS 17 tiempo de limpieza, DPS 18 fallo). Entidades `select.<robot>_modo_de_limpieza` y `select.<robot>_control_manual` creadas automáticamente y listas para HomeKit Bridge o puentes Matter. Derivación de estado desde DPS 5 y eliminación de comandos especulativos. |
 | **0.5.24** | **Perfil seguro para comederos Tuya con cámara**. Importa el esquema oficial de funciones del producto para usar el DP numérico de alimentación manual, conserva la cantidad de porciones tras reinicios/redescubrimiento/cambio de IP y sólo expone `Limpiar tolva` cuando el producto declara ese comando. |
 | **0.5.23** | **Mejora en detección dinámica de dimmers**. Corrige el DPS de brillo cuando un dimmer usa el DPS `2` para intensidad y evita modificar por error el límite mínimo de atenuación. |
