@@ -1,3 +1,9 @@
+## [1.12.3] - 2026-11-05
+
+- Actualiza herramientas de CI y validación: `ruff` a 0.17.4 y `HAP-python` a 5.1.0 en `.github/workflows/validate.yml`.
+- Amplía la matriz de compatibilidad de Home Assistant Core incorporando la versión 2026.11.0.
+- Revalida el árbol de dependencias de `tinytuya==1.20.0` y confirma 0 vulnerabilidades conocidas (OSV/PyPI).
+
 ## [1.12.2] - 2026-10-29
 
 - Añade un comando WebSocket de administrador para obtener capacidades WebRTC y una configuración de señalización temporal por cámara Tuya.
