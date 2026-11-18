@@ -9,11 +9,16 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-1.12.3-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-1.12.4-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
+
+## Actualización v1.12.4
+
+Actualiza tinytuya a 1.21.1 en la integración y en CI. Actualiza Ruff a 0.17.5, HAP-python de pruebas a 5.2.0 y Python de CI a 3.14.10. Verifica los contratos de entidades y configuración con Home Assistant 2026.11.2 y conserva el objetivo 2026.10.4 en la matriz. [Notas de versión](docs/RELEASE_NOTES_1.12.4.md).
+
 
 ## Novedades de la versión 1.12.3
 

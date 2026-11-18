@@ -2,6 +2,7 @@
 
 import importlib
 import os
+from unittest.mock import patch
 
 import homeassistant.core  # Initialize Core's voluptuous compatibility layer first.
 from homeassistant import const
@@ -21,8 +22,11 @@ def test_all_platform_modules_import_with_core_2026_10():
         "alarm_control_panel", "binary_sensor", "button", "camera", "valve", "climate", "cover", "fan",
         "humidifier", "light", "lock", "number", "select", "sensor", "switch", "text", "vacuum",
     )
-    for platform in platforms:
-        importlib.import_module(f"custom_components.omni_tuya_local.{platform}")
+    # Import smoke runs without an initialized HA loader. Other tests may have
+    # created a bare HomeAssistant object in the same thread's context.
+    with patch("homeassistant.core.async_get_hass_or_none", return_value=None):
+        for platform in platforms:
+            importlib.import_module(f"custom_components.omni_tuya_local.{platform}")
 
 
 def test_representative_entities_use_core_entity_contracts():

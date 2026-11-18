@@ -1,3 +1,9 @@
+## [1.12.4] - 2026-11-17
+
+- Actualiza tinytuya a 1.21.1 en la integración y en CI.
+- Actualiza Ruff a 0.17.5, HAP-python de pruebas a 5.2.0 y Python de CI a 3.14.10.
+- Verifica los contratos de entidades y configuración con Home Assistant 2026.11.2 y conserva el objetivo 2026.10.4 en la matriz.
+
 ## [1.12.3] - 2026-11-05
 
 - Actualiza herramientas de CI y validación: `ruff` a 0.17.4 y `HAP-python` a 5.1.0 en `.github/workflows/validate.yml`.
