@@ -9,11 +9,15 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/versión-1.12.4-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/versión-1.12.6-blue?style=flat-square"/>
   <img src="https://img.shields.io/badge/HA-2026.7.1%2B-41BDF5?style=flat-square&logo=home-assistant"/>
   <img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/protocolo-Tuya%20Local-FF6B35?style=flat-square"/>
 </p>
+
+## Actualización v1.12.6
+
+Matter All-in-One 2.3.21 puede consultar si una cámara Tuya anuncia altavoz. Omni admite conversación por turnos o simultánea y solicita credenciales temporales cuando se abre la sesión de voz. El volumen y la salida física del Comedero Michi en Apple Casa quedan pendientes de verificación. [Notas de versión](RELEASE_NOTES_v1.12.6.md) · [Historial](docs/RELEASES.md).
 
 ## Actualización v1.12.4
 

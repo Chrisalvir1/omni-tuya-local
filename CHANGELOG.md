@@ -2,6 +2,7 @@
 
 - Añade una consulta WebSocket autenticada de capacidad de altavoz Tuya. Devuelve solo el indicador de retorno de voz y evita asignar credenciales MQTT durante el descubrimiento.
 - Permite chat por turnos o simultáneo cuando Tuya confirma la presencia de altavoz. Las credenciales de sesión se asignan al abrir el canal de voz.
+- Validación con 122 pruebas unitarias y dos pruebas WebSocket con Home Assistant Core 2026.11.2. La salida física del altavoz sigue pendiente.
 
 ## [1.12.5] - 2026-11-20
 
