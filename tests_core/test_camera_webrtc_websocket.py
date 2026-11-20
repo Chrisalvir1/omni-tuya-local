@@ -67,7 +67,7 @@ async def test_real_websocket_dispatch_allocates_webrtc_and_checks_admin():
         handler(hass, connection, msg)
         await asyncio.gather(*tasks)
         allocate.assert_awaited_once_with(
-            hass, {"region": "eu"}, "cloud-device"
+            hass, {"region": "eu"}, "cloud-device", capabilities_only=False
         )
         connection.send_result.assert_called_once_with(
             8, {"deviceId": "cloud-device", "auth": "transient"}

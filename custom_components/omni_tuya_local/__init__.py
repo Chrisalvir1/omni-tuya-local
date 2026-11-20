@@ -230,6 +230,7 @@ def _async_register_camera_webrtc_websocket(hass: HomeAssistant) -> None:
     @websocket_api.websocket_command({
         vol.Required("type"): "omni_tuya_local/camera_webrtc",
         vol.Required("entity_id"): cv.entity_id,
+        vol.Optional("capabilities_only", default=False): bool,
     })
     @websocket_api.require_admin
     @websocket_api.async_response
@@ -247,7 +248,11 @@ def _async_register_camera_webrtc_websocket(hass: HomeAssistant) -> None:
             if not config:
                 continue
             try:
-                bundle = await async_allocate_webrtc(hass, coordinator.store.cloud_config or {}, config.get("cloud_id") or device_id)
+                bundle = await async_allocate_webrtc(
+                    hass, coordinator.store.cloud_config or {},
+                    config.get("cloud_id") or device_id,
+                    capabilities_only=msg["capabilities_only"],
+                )
                 connection.send_result(msg["id"], bundle)
             except Exception:
                 connection.send_error(msg["id"], "webrtc_unavailable", "Tuya WebRTC session could not be allocated")

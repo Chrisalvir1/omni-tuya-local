@@ -9,7 +9,7 @@ class CameraWebRtcError(ValueError):
     """Public, credential-free failure."""
 
 
-def allocate_webrtc(client: Any, device_id: str) -> dict[str, Any]:
+def allocate_webrtc(client: Any, device_id: str, *, capabilities_only: bool = False) -> dict[str, Any]:
     """Use the same Cloud region/account as RTSP, with one MQTT identity per call."""
     def request(path: str, **kwargs: Any) -> dict[str, Any]:
         response = client.cloudrequest(path, **kwargs)
@@ -24,10 +24,20 @@ def allocate_webrtc(client: Any, device_id: str) -> dict[str, Any]:
 
     config = request(f"/v1.0/devices/{device_id}/webrtc-configs")
     attributes = config.get("audio_attributes") or {}
+    if not isinstance(attributes, dict):
+        attributes = {}
     modes = attributes.get("call_mode", [])
     hardware = attributes.get("hardware_capability", [])
-    if config.get("supports_webrtc") is not True or 2 not in modes or 2 not in hardware:
-        raise CameraWebRtcError("Tuya does not advertise two-way audio for this session")
+    # Chat mode 1 or 2 can carry outgoing speech; hardware ID 2 is the speaker.
+    speaker_available = (
+        config.get("supports_webrtc") is True
+        and isinstance(modes, list) and (1 in modes or 2 in modes)
+        and isinstance(hardware, list) and 2 in hardware
+    )
+    if capabilities_only:
+        return {"twoWayAudio": speaker_available}
+    if not speaker_available:
+        raise CameraWebRtcError("Tuya does not advertise a speaker for this session")
     device = request(f"/v1.0/devices/{device_id}")
     uid = device.get("uid")
     if not isinstance(uid, str) or not uid:
@@ -43,13 +53,13 @@ def allocate_webrtc(client: Any, device_id: str) -> dict[str, Any]:
             "audioAttributes": attributes, "skill": config.get("skill"), "mqtt": mqtt}
 
 
-async def async_allocate_webrtc(hass: Any, cloud: dict[str, Any], device_id: str) -> dict[str, Any]:
+async def async_allocate_webrtc(hass: Any, cloud: dict[str, Any], device_id: str, *, capabilities_only: bool = False) -> dict[str, Any]:
     def allocate() -> dict[str, Any]:
         import tinytuya
         try:
             client = tinytuya.Cloud(apiRegion=cloud.get("region", "eu"), apiKey=cloud.get("api_key", ""),
                                     apiSecret=cloud.get("api_secret", ""), apiDeviceID=device_id)
-            return allocate_webrtc(client, device_id)
+            return allocate_webrtc(client, device_id, capabilities_only=capabilities_only)
         except CameraWebRtcError:
             raise
         except Exception:

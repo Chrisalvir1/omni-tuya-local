@@ -23,6 +23,19 @@ class BootstrapTests(unittest.TestCase):
         assert len(client.cloudrequest.call_args.kwargs["post"]["link_id"]) == 8
 
 
+    def test_capability_only_does_not_allocate_credentials(self):
+        client = Mock()
+        client.cloudrequest.return_value = {"success": True, "result": {
+            "supports_webrtc": True,
+            "audio_attributes": {"call_mode": [1], "hardware_capability": [2]},
+            "auth": "secret",
+        }}
+        self.assertEqual(
+            module.allocate_webrtc(client, "device", capabilities_only=True),
+            {"twoWayAudio": True},
+        )
+        client.cloudrequest.assert_called_once_with("/v1.0/devices/device/webrtc-configs")
+
     def test_api_failure_never_echoes_credentials(self):
         client = Mock()
         client.cloudrequest.return_value = {"success": False, "code": 123, "msg": "password=secret"}
