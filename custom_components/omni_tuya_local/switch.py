@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN, HOMEKIT_SWITCH_TYPES
 from .coordinator import OmniTuyaLocalCoordinator
@@ -28,7 +29,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # un dispositivo con switches predefinidos secundarios (ej. pet_feeder).
             # Evita crear switches duplicados si el dispositivo está configurado como light u otro dominio.
             if device_domain != "switch":
-                if device_type not in _PREDEFINED_SWITCHES:
+                if device_type != "pet_feeder" and device_type not in _PREDEFINED_SWITCHES:
                     continue
             for dps_id, name in _switch_dps(config, coordinator):
                 unique_suffix = "" if dps_id == "1" else f"_{dps_id}"
@@ -79,7 +80,7 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
-        if self._is_pet_feeder_feed():
+        if self._pet_feeder_command() is not None:
             return self._is_feeding
         value = self.dps(self.dps_id)
         if value is None:
@@ -152,14 +153,17 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
         return attrs
 
     async def async_turn_on(self, **kwargs) -> None:
-        if self._is_pet_feeder_feed():
+        feed = self._pet_feeder_command()
+        if feed is not None:
+            if self._is_feeding:
+                raise HomeAssistantError("A manual feeding command is already in progress")
             # Tuya's video-feeder feed_publish/manual_feed DP is write-only and
             # expects the selected serving count.  Persisted config keeps the
             # choice across HA restarts, IP changes and rediscovery.
             config = self.coordinator.get_device_config(self.device_id) or self.config
             portions = int(config.get("manual_feed_portions", 1))
-            _, kind = pet_feeder_feed(config, self.raw_dps) or (self.dps_id, "value")
-            
+            _, kind = feed
+
             # Cambiamos estado local a encendido temporalmente
             self._is_feeding = True
             self.async_write_ha_state()
@@ -176,23 +180,24 @@ class OmniTuyaSwitch(OmniTuyaEntity, SwitchEntity):
                     self._is_feeding = False
                     self.async_write_ha_state()
                 self.hass.async_create_task(auto_reset())
+        elif self.config.get("device_type") == "pet_feeder":
+            raise HomeAssistantError("No verified feeding command for this switch")
         else:
             await self.coordinator.async_set_status(self.device_id, True, int(self.dps_id))
 
     async def async_turn_off(self, **kwargs) -> None:
-        if not self._is_pet_feeder_feed():
+        if self.config.get("device_type") != "pet_feeder":
             await self.coordinator.async_set_status(self.device_id, False, int(self.dps_id))
 
-    def _is_pet_feeder_feed(self) -> bool:
+    def _pet_feeder_command(self) -> tuple[str, str] | None:
         config = self.coordinator.get_device_config(self.device_id) or self.config
+        if config.get("device_type") != "pet_feeder":
+            return None
         selected = pet_feeder_feed(config, self.raw_dps)
-        return bool(config.get("device_type") == "pet_feeder" and selected and selected[0] == self.dps_id)
+        return selected if selected and selected[0] == self.dps_id else None
 
 
 _PREDEFINED_SWITCHES: dict[str, list[dict[str, Any]]] = {
-    "pet_feeder": [
-        {"name": "Alimentar ahora"},
-    ],
     "coffee_maker": [
         {"dps_id": "1", "name": "Preparar café"},
     ],
@@ -215,11 +220,13 @@ def _switch_dps(config: dict, coordinator: OmniTuyaLocalCoordinator) -> list[tup
     device_type = config.get("device_type") or "generic"
 
     # 1. DPS predefinidos para tipos especiales
-    if device_type in _PREDEFINED_SWITCHES:
+    if device_type == "pet_feeder":
         raw_dps = (coordinator.data or {}).get("dps", {}).get(config.get("device_id"), {})
         feed = pet_feeder_feed(config, raw_dps)
-        if feed:
-            return [(feed[0], _PREDEFINED_SWITCHES["pet_feeder"][0].get("name", "Alimentar ahora"))]
+        if feed is None:
+            return []
+        return [(feed[0], "Alimentar ahora")]
+    if device_type in _PREDEFINED_SWITCHES:
         predefined = []
         for item in _PREDEFINED_SWITCHES[device_type]:
             dp_id = str(item.get("dps_id", "1"))

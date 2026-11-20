@@ -42,17 +42,23 @@ def pet_feeder_feed(config: dict[str, Any], raw_dps: dict[str, Any]) -> tuple[st
         if dp_id and code in _BOOLEAN_FEED_CODES:
             return dp_id, "bool"
 
-    # Compatibility with the two documented non-video feeder templates.  Do
-    # not guess a cleaning DP: an incorrect clean command can change a setting.
-    if isinstance(raw_dps.get("3"), (int, float)) and not isinstance(raw_dps.get("3"), bool):
-        return "3", "value"
-    # This is the DP used by the video-feeder profile supported by earlier
-    # Omni releases.  Keep it as a compatibility fallback only; Cloud schema
-    # remains the authoritative source for new imports.
-    if isinstance(raw_dps.get("201"), (int, float)) and not isinstance(raw_dps.get("201"), bool):
-        return "201", "value"
-    if isinstance(raw_dps.get("2"), bool):
-        return "2", "bool"
+    # The stored schema records observed types without persisting DPS
+    # values. Use it to restore the same switch before the first LAN poll.
+    discovered = config.get("discovered_dps") or {}
+    for dp_id, kind, expected_type in (
+        ("3", "value", "number"),
+        ("201", "value", "number"),
+        ("2", "bool", "boolean"),
+    ):
+        value = raw_dps.get(dp_id)
+        if value is None:
+            if (discovered.get(dp_id) or {}).get("kind") == expected_type:
+                return dp_id, kind
+        elif kind == "bool":
+            if isinstance(value, bool):
+                return dp_id, kind
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            return dp_id, kind
     return None
 
 

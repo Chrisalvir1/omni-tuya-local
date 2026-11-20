@@ -1,3 +1,9 @@
+## [1.12.5] - 2026-11-20
+
+- Restaura el mando «Alimentar ahora» desde el esquema LAN guardado al iniciar. Conserva el identificador del canal ya registrado cuando el esquema confirma su tipo.
+- Evita crear un mando genérico durante el arranque y rechaza una segunda orden manual mientras la anterior sigue activa.
+- Actualiza Ruff a 0.17.6 en CI.
+
 ## [1.12.4] - 2026-11-17
 
 - Actualiza tinytuya a 1.21.1 en la integración y en CI.

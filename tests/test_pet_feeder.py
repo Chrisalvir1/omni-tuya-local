@@ -1,11 +1,15 @@
 import tests
 import unittest
+from types import SimpleNamespace
 
 from custom_components.omni_tuya_local.pet_feeder import (
     function_id,
     pet_feeder_feed,
     pet_feeder_clean_hopper,
 )
+
+
+from custom_components.omni_tuya_local.switch import _switch_dps
 
 
 class TestPetFeeder(unittest.TestCase):
@@ -49,6 +53,17 @@ class TestPetFeeder(unittest.TestCase):
 
         res_bool = pet_feeder_feed({}, {"2": True})
         self.assertEqual(res_bool, ("2", "bool"))
+
+    def test_switch_restores_persisted_feed_channel_before_polling(self):
+        config = {
+            "device_id": "feeder",
+            "device_type": "pet_feeder",
+            "discovered_dps": {"201": {"kind": "number"}},
+        }
+        coordinator = SimpleNamespace(data=None, devices={})
+        self.assertEqual(_switch_dps(config, coordinator), [("201", "Alimentar ahora")])
+        self.assertEqual(_switch_dps({**config, "discovered_dps": {}}, coordinator), [])
+        self.assertIsNone(pet_feeder_feed(config, {"201": False}))
 
     def test_pet_feeder_clean_hopper(self):
         config = {
