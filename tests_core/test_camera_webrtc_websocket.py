@@ -13,7 +13,8 @@ from custom_components.omni_tuya_local import (
 
 
 @pytest.mark.asyncio
-async def test_real_websocket_dispatch_allocates_webrtc_and_checks_admin():
+@pytest.mark.parametrize("capabilities_only", [False, True])
+async def test_real_websocket_dispatch_allocates_webrtc_and_checks_admin(capabilities_only):
     hass = MagicMock()
     hass.data = {}
     tasks = []
@@ -33,6 +34,12 @@ async def test_real_websocket_dispatch_allocates_webrtc_and_checks_admin():
         "type": "omni_tuya_local/camera_webrtc",
         "entity_id": "camera.feeder",
     }
+    if capabilities_only:
+        msg["capabilities_only"] = True
+    expected_result = (
+        {"twoWayAudio": True} if capabilities_only
+        else {"deviceId": "cloud-device", "auth": "transient"}
+    )
     entity = SimpleNamespace(
         domain="camera",
         platform="omni_tuya_local",
@@ -56,7 +63,7 @@ async def test_real_websocket_dispatch_allocates_webrtc_and_checks_admin():
         patch(
             "custom_components.omni_tuya_local.async_allocate_webrtc",
             new_callable=AsyncMock,
-            return_value={"deviceId": "cloud-device", "auth": "transient"},
+            return_value=expected_result,
         ) as allocate,
         patch(
             "custom_components.omni_tuya_local.websocket_api.async_register_command"
@@ -67,10 +74,10 @@ async def test_real_websocket_dispatch_allocates_webrtc_and_checks_admin():
         handler(hass, connection, msg)
         await asyncio.gather(*tasks)
         allocate.assert_awaited_once_with(
-            hass, {"region": "eu"}, "cloud-device", capabilities_only=False
+            hass, {"region": "eu"}, "cloud-device", capabilities_only=capabilities_only
         )
         connection.send_result.assert_called_once_with(
-            8, {"deviceId": "cloud-device", "auth": "transient"}
+            8, expected_result
         )
         connection.async_handle_exception.assert_not_called()
 

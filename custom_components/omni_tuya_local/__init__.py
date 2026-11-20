@@ -251,7 +251,7 @@ def _async_register_camera_webrtc_websocket(hass: HomeAssistant) -> None:
                 bundle = await async_allocate_webrtc(
                     hass, coordinator.store.cloud_config or {},
                     config.get("cloud_id") or device_id,
-                    capabilities_only=msg["capabilities_only"],
+                    capabilities_only=msg.get("capabilities_only", False),
                 )
                 connection.send_result(msg["id"], bundle)
             except Exception:

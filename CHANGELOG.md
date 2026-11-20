@@ -1,3 +1,8 @@
+## [1.12.6] - 2026-11-20
+
+- Añade una consulta WebSocket autenticada de capacidad de altavoz Tuya. Devuelve solo el indicador de retorno de voz y evita asignar credenciales MQTT durante el descubrimiento.
+- Permite chat por turnos o simultáneo cuando Tuya confirma la presencia de altavoz. Las credenciales de sesión se asignan al abrir el canal de voz.
+
 ## [1.12.5] - 2026-11-20
 
 - Restaura el mando «Alimentar ahora» desde el esquema LAN guardado al iniciar. Conserva el identificador del canal ya registrado cuando el esquema confirma su tipo.
